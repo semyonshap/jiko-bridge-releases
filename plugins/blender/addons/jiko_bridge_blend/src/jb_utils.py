@@ -46,9 +46,22 @@ addon_keymaps: list = []
 def register_keymap():
     """Register keymap"""
     wm = bpy.context.window_manager
+    if not wm:
+        return
+
     kc = wm.keyconfigs.addon
     if kc:
-        km = kc.keymaps.new(name="3D View", space_type="VIEW_3D")
+        km = kc.keymaps.get("3D View")
+        if km is None:
+            km = kc.keymaps.new(name="3D View", space_type="VIEW_3D")
+
+        for item in km.keymap_items:
+            if (
+                item.idname == "wm.call_menu_pie"
+                and item.properties.get("name", "") == "JB_MT_PIE_MAIN"
+            ):
+                return
+
         kmi = km.keymap_items.new(
             "wm.call_menu_pie",
             type="J",

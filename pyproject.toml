@@ -27,4 +27,7 @@ ignored-modules = ["c4d", "maxon"]
 generated-members = ["c4d.*"]
 
 [tool.pylint."MESSAGES CONTROL"]
-disable = ["too-few-public-methods"]
+disable = [
+    "too-few-public-methods",
+    "broad-exception-caught"
+]

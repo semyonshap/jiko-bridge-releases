@@ -8,10 +8,14 @@ from src.jb_types import JbSource
 from src.jb_asset_importer import JbAssetImporter
 from src.jb_asset_exporter import JbAssetExporter
 from src.jb_utils import reload_plugin_modules
+from src.jb_settings import JbSettingsDialog
+from src.scene.jb_scene import JbScene
 
 IDC_POPUP_ACTION_IMPORT = 2001
 IDC_POPUP_ACTION_EXPORT = 2002
-IDC_POPUP_ACTION_RELOAD = 2003
+IDC_POPUP_ACTION_SOLO = 2003
+IDC_POPUP_ACTION_RELOAD = 2004
+IDC_POPUP_ACTION_SETTINGS = 2005
 
 
 class JbCommandsPopup:
@@ -21,8 +25,10 @@ class JbCommandsPopup:
 
     def __init__(self, source: JbSource):
         self.doc = source
+        self.scene = JbScene(source)
         self.asset_import = JbAssetImporter(source)
         self.asset_export = JbAssetExporter(source)
+        self._settings_dialog = JbSettingsDialog(source)
 
     def export_asset(self):
         """Export asset to Jiko Bridge."""
@@ -46,17 +52,37 @@ class JbCommandsPopup:
             self.doc.EndUndo()
             c4d.EventAdd()
 
+    def solo(self):
+        """Solo mode with history"""
+        self.doc.StartUndo()
+        try:
+            self.scene.solo()
+        finally:
+            self.doc.EndUndo()
+            c4d.EventAdd()
+
     def reload_modules(self):
         """Reload plugin modules."""
         reload_plugin_modules()
         c4d.EventAdd()
 
+    def open_settings(self):
+        """Открыть диалог настроек."""
+        self._settings_dialog.Open(
+            dlgtype=c4d.DLG_TYPE_MODAL,
+            defaultw=250,
+            defaulth=120,
+        )
+
     def show_popup_menu(self):
         """Show the popup menu."""
         bc = c4d.BaseContainer()
         bc.InsData(IDC_POPUP_ACTION_IMPORT, f"Import&i{c4d.ID_MODELING_FLATTEN_TOOL}&")
-        bc.InsData(IDC_POPUP_ACTION_EXPORT, f"Export&i{c4d.RESOURCEIMAGE_EYEACTIVE}&")
+        bc.InsData(IDC_POPUP_ACTION_EXPORT, f"Export&i{c4d.ID_GLOBALMACHINELIST}&")
+        bc.InsData(IDC_POPUP_ACTION_SOLO, f"Solo&i{c4d.RESOURCEIMAGE_EYEACTIVE}&")
+        bc.InsData(0, "")
         bc.InsData(IDC_POPUP_ACTION_RELOAD, f"Reload&i{c4d.ID_MODELING_ROTATE}&")
+        bc.InsData(IDC_POPUP_ACTION_SETTINGS, f"Settings&i{c4d.RESOURCEIMAGE_PIN}&")
 
         res = c4d.gui.ShowPopupDialog(cd=None, bc=bc, x=c4d.MOUSEPOS, y=c4d.MOUSEPOS)
 
@@ -64,8 +90,12 @@ class JbCommandsPopup:
             self.import_asset()
         elif res == IDC_POPUP_ACTION_EXPORT:
             self.export_asset()
+        elif res == IDC_POPUP_ACTION_SOLO:
+            self.solo()
         elif res == IDC_POPUP_ACTION_RELOAD:
             self.reload_modules()
+        elif res == IDC_POPUP_ACTION_SETTINGS:
+            self.open_settings()
 
 
 class JbCommands:

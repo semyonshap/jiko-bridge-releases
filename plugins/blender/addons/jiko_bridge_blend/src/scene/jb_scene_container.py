@@ -71,6 +71,21 @@ class JbSceneContainer(JbSceneObjects):
 
         return list(containers)
 
+    def get_containers_from_instances(self, objects) -> list[JbContainer]:
+        containers: set[JbContainer] = set()
+        for obj in objects:
+            if not isinstance(obj, bpy.types.Object):
+                continue
+            if obj.instance_type != 'COLLECTION':
+                continue
+            collection = obj.instance_collection
+            if collection is None:
+                continue
+            if self.get_asset_data_from_container(collection):
+                containers.add(collection)
+
+        return list(containers)
+
     def set_asset_data(self, container, asset, file=None) -> None:
         container["jb_pack_name"] = asset.pack_name or ""
         container["jb_asset_name"] = asset.asset_name or ""

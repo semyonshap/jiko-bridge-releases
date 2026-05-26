@@ -80,7 +80,8 @@ class JbSceneObjects(JbSceneABC):
                             item, (bpy.types.Object, bpy.types.Collection, bpy.types.Material)
                         ):
                             data.append(item)
-        else:
+
+        if not data:
             if not (view_layer := ctx.view_layer):
                 return []
             if view_layer.objects:
@@ -92,7 +93,6 @@ class JbSceneObjects(JbSceneABC):
             ):
                 data = [collection]
 
-        self.logger.debug("Selected objects: %s", data)
         return data
 
     def get_materials_from_objects(self, objects) -> list[JbMaterial]:
@@ -139,3 +139,20 @@ class JbSceneObjects(JbSceneABC):
         for dup in duplicates:
             dup.user_remap(material)
             bpy.data.materials.remove(dup)
+
+    def _find_layer_collection(self, layer_col, collection) -> bpy.types.LayerCollection | None:
+        if layer_col.collection == collection:
+            return layer_col
+        for child in layer_col.children:
+            result = self._find_layer_collection(child, collection)
+            if result:
+                return result
+        return None
+
+    def _set_collection_visibility(self, collection, visible: bool) -> None:
+        view_layer = self.source.view_layer
+        if not view_layer:
+            return
+        layer_col = self._find_layer_collection(view_layer.layer_collection, collection)
+        if layer_col:
+            layer_col.hide_viewport = not visible

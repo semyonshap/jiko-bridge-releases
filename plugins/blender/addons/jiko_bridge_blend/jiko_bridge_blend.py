@@ -8,6 +8,8 @@ from .src.jb_commands import JB_PT_Commands, JB_MT_PIE_AssetActions
 from .src.jb_asset_exporter import JbAssetExporter
 from .src.jb_asset_importer import JbAssetImporter
 from .src.jb_utils import register_keymap, reload_plugin_modules, unregister_keymap
+from .src.jb_settings import register_settings, unregister_settings
+from .src.scene.jb_scene import JbScene
 
 
 class JB_OT_AssetImport(bpy.types.Operator):  # pylint: disable=invalid-name
@@ -48,6 +50,19 @@ class JB_OT_AssetExport(bpy.types.Operator):  # pylint: disable=invalid-name
         return {"FINISHED"}
 
 
+class JB_OT_Solo(bpy.types.Operator):  # pylint: disable=invalid-name
+    """Solo selected asset."""
+
+    bl_idname = "jiko_bridge.solo"
+    bl_label = "Solo Asset"
+    bl_description = "Isolate selected asset collections"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        JbScene(context).solo()
+        return {"FINISHED"}
+
+
 class JB_OT_Reload(bpy.types.Operator):  # pylint: disable=invalid-name
     """Reloads the Jiko Bridge addon."""
 
@@ -62,6 +77,7 @@ class JB_OT_Reload(bpy.types.Operator):  # pylint: disable=invalid-name
 classes = [
     JB_PT_Commands,
     JB_OT_Reload,
+    JB_OT_Solo,
     JB_OT_AssetExport,
     JB_OT_AssetImport,
     JB_MT_PIE_AssetActions,
@@ -74,6 +90,7 @@ def register():
         bpy.utils.register_class(cls)
 
     register_keymap()
+    register_settings()
 
 
 def unregister():
@@ -82,3 +99,4 @@ def unregister():
         bpy.utils.unregister_class(cls)
 
     unregister_keymap()
+    unregister_settings()

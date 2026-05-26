@@ -10,6 +10,7 @@ from src.jb_types import JbSource, AssetModel, AssetFile
 from src.scene.jb_scene import JbScene
 from src.jb_utils import get_logger
 from src.jb_protocols import JbAssetExporterProtocol
+from src.jb_settings import JbSettings
 
 logger = get_logger(__name__)
 
@@ -18,6 +19,7 @@ class JbAssetExporter(JbAssetExporterProtocol):
     """Export asset class"""
 
     def __init__(self, source: JbSource):
+        self.source = source
         self.api = JbAPI()
         self.scene = JbScene(source)
 
@@ -69,7 +71,7 @@ class JbAssetExporter(JbAssetExporterProtocol):
             )
             return
 
-        ext = Path(file.filepath.lower()).suffix
+        ext = Path(file.filepath.lower()).suffix.lstrip('.')
         if not ext:
             logger.error(
                 "Unable to determine export extension from filepath '%s' for '%s'.",
@@ -97,7 +99,9 @@ class JbAssetExporter(JbAssetExporterProtocol):
         self.api.update_asset(asset)
 
     def _create_new_asset(self, objects) -> None:
-        filepath = self.scene.export_with_temp(objects, ".fbx")
+        fmt = JbSettings(self.source).get_export_format()
+
+        filepath = self.scene.export_with_temp(objects, fmt)
         if not filepath:
             logger.error("Export failed.")
             return

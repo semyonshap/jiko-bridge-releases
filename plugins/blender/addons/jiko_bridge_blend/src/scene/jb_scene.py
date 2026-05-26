@@ -10,6 +10,7 @@ import bpy
 from ..jb_types import JbSource
 from .jb_scene_temp import JBSceneTemp
 from ..jb_utils import get_logger
+from ..jb_settings import JbSettings
 
 
 class JbScene(JBSceneTemp):
@@ -32,9 +33,11 @@ class JbScene(JBSceneTemp):
 
     def import_with_temp(self, file_path, target) -> None:
         with self.temp_source(debug=False) as temp:
-            if not self.import_file(file_path):
-                self.logger.warning("No objects imported for file: %s", file_path)
-                return
+            with self._view3d_context(temp):
+                if not self.import_file(file_path):
+                    self.logger.warning("No objects imported for file: %s", file_path)
+                    return
+
             self._copy_source([temp.collection], target)
 
     def export_with_temp(self, src, ext) -> Optional[str]:
@@ -45,7 +48,9 @@ class JbScene(JBSceneTemp):
                 return None
             copies = list(col.objects)
             self.replace_instances_with_placeholders(copies, temp)
-            return self.export_file(ext)
+
+            with self._view3d_context(temp):
+                return self.export_file(ext)
 
     def get_project_filepath(self) -> Optional[str]:
         """Get the current Blender project file path."""
@@ -54,3 +59,34 @@ class JbScene(JBSceneTemp):
             self.logger.warning("Current Blender project is not saved.")
             return None
         return filepath
+
+    def solo(self):
+        objects = self.get_selection()
+        instances = self.get_containers_from_instances(objects)
+        containers = self.get_containers_from_objects(objects)
+        combine = instances + containers
+
+        settings = JbSettings(self.source)
+
+        if not combine:
+            combine = settings.pop_solo_selection()
+        else:
+            settings.save_solo_selection(combine)
+
+        if not combine:
+            return
+
+        root = self.get_or_create_container("Assets")
+
+        # Скрыть root
+        self._set_collection_visibility(root, True)
+
+        # Все children -> скрытые
+        for child in root.children:
+            self._set_collection_visibility(child, False)
+
+        # combine -> видимые
+        for col in combine:
+            self._set_collection_visibility(col, True)
+
+        bpy.ops.view3d.view_all()

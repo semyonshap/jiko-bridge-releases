@@ -60,12 +60,12 @@ class JbSceneFile(JbSceneTemp):
         return result
 
     def import_file(self, file_path) -> bool:
-        ext = Path(file_path).suffix.lower()
+        ext = Path(file_path).suffix.lower().lstrip('.')
         handler = {
-            ".fbx": self._import_fbx,
-            ".abc": self._import_alembic,
-            ".obj": self._import_obj,
-            ".usd": self._import_usd,
+            "fbx": self._import_fbx,
+            "abc": self._import_alembic,
+            "obj": self._import_obj,
+            "usd": self._import_usd,
         }.get(ext)
 
         if not handler:
@@ -98,7 +98,7 @@ class JbSceneFile(JbSceneTemp):
         imex = self._get_imexporter(plug)
         if imex:
             scale_data = c4d.UnitScaleData()
-            scale_data.SetUnitScale(100, c4d.DOCUMENT_UNIT_CM)
+            scale_data.SetUnitScale(1, c4d.DOCUMENT_UNIT_M)
             imex[c4d.ABCIMPORT_SCALE] = scale_data
             imex[c4d.ABCIMPORT_FACESETS] = True
 
@@ -128,7 +128,7 @@ class JbSceneFile(JbSceneTemp):
         return result
 
     def _generate_path(self, ext: str) -> str:
-        filename = f"tmp_{int(time.time())}{ext}"
+        filename = f"tmp_{int(time.time())}.{ext}"
         return os.path.join(self.cache_path, filename)
 
     def _select_all(self, doc: c4d.documents.BaseDocument) -> None:
@@ -139,10 +139,10 @@ class JbSceneFile(JbSceneTemp):
     def export_file(self, ext) -> Optional[str]:
         file_path = self._generate_path(ext)
         handler = {
-            ".fbx": self._export_fbx,
-            ".abc": self._export_alembic,
-            ".obj": self._export_obj,
-            ".usd": self._export_usd,
+            "fbx": self._export_fbx,
+            "abc": self._export_alembic,
+            "obj": self._export_obj,
+            "usd": self._export_usd,
         }.get(ext)
 
         if not handler:
@@ -153,6 +153,8 @@ class JbSceneFile(JbSceneTemp):
         return handler(file_path)
 
     def _export_fbx(self, file_path) -> Optional[str]:
+        self._project_scale(self._temp_source, 0.01)
+
         plug = self._find_plugin(c4d.FORMAT_FBX_EXPORT, c4d.PLUGINTYPE_SCENESAVER)
         if not plug:
             return None
@@ -172,6 +174,7 @@ class JbSceneFile(JbSceneTemp):
         return file_path
 
     def _export_alembic(self, file_path: str) -> Optional[str]:
+        self._project_scale(self._temp_source, 0.01)
         plug = self._find_plugin(c4d.FORMAT_ABCEXPORT, c4d.PLUGINTYPE_SCENESAVER)
         if not plug:
             return None
@@ -180,7 +183,7 @@ class JbSceneFile(JbSceneTemp):
         if imex:
             imex[c4d.ABCEXPORT_SELECTION_ONLY] = True
             scale_data = c4d.UnitScaleData()
-            scale_data.SetUnitScale(0.01, c4d.DOCUMENT_UNIT_CM)
+            scale_data.SetUnitScale(1, c4d.DOCUMENT_UNIT_M)
             imex[c4d.ABCEXPORT_SCALE] = scale_data
 
         if not self._save_document(file_path, c4d.FORMAT_ABCEXPORT):

@@ -129,6 +129,10 @@ class JbSceneObjects(JbSceneABC):
         if element is not None:
             obj[element] = value
 
+    def _set_visibility(self, obj: c4d.BaseObject, mode: int) -> None:
+        obj[c4d.ID_BASEOBJECT_VISIBILITY_EDITOR] = mode
+        obj[c4d.ID_BASEOBJECT_VISIBILITY_RENDER] = mode
+
     def merge_duplicates_materials(self, material: c4d.BaseMaterial) -> None:
         pattern = re.compile(r"^" + re.escape(material.GetName()) + r"\.\d+$")
 

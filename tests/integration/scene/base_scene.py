@@ -40,7 +40,7 @@ class BaseScene(ABC):
     def create_scene_object(self, name: str, parent: Optional[Any] = None) -> Any:
         """Create a new object in the scene."""
         raise NotImplementedError
-    
+
     @abstractmethod
     def create_scene_material(self, name: str) -> Any:
         """Create a new material in the scene."""
@@ -55,6 +55,21 @@ class BaseScene(ABC):
     def find_container_by_name(self, name: str) -> Optional[Any]:
         """Find a scene container by name."""
         raise NotImplementedError
+
+    def find_container_by_asset(self, asset: Any) -> Optional[Any]:
+        "Find scene container by asset model"
+        name = f"Asset_{asset.pack_name}_{asset.asset_name}"
+        return self.find_container_by_name(name)
+
+    @abstractmethod
+    def find_material_by_name(self, name: str) -> Optional[Any]:
+        """Find material in the current scene by name."""
+        raise NotImplementedError
+
+    def find_material_by_asset(self, asset: Any) -> Optional[Any]:
+        "Find material by asset model"
+        name = f"{asset.pack_name}__{asset.asset_name}"
+        return self.find_material_by_name(name)
 
     @abstractmethod
     def select_objects(self, objects: list[Any]) -> None:
@@ -82,11 +97,6 @@ class BaseScene(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def find_material_by_name(self, name: str) -> Optional[Any]:
-        """Find a material in the current scene by name."""
-        raise NotImplementedError
-
-    @abstractmethod
     def apply_material_to_object(self, obj: Any, material: Any) -> bool:
         """Apply a material to a given scene object."""
         raise NotImplementedError
@@ -99,4 +109,9 @@ class BaseScene(ABC):
     @abstractmethod
     def get_children_container(self, container: Any) -> list[Any]:
         """Return a list of child objects for the given container."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def set_export_format(self, fmt: str) -> None:
+        """Set the export format (e.g. 'fbx', 'abc') in the plugin settings."""
         raise NotImplementedError

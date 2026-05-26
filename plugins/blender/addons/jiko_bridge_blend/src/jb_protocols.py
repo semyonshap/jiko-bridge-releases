@@ -5,7 +5,7 @@ Code by Semyon Shapoval, 2026
 
 from abc import ABC, abstractmethod
 from logging import Logger
-from typing import Protocol, Generator, Optional, TypedDict
+from typing import Protocol, Generator, Optional, TypedDict, List
 
 from .jb_types import (
     AssetFile,
@@ -122,6 +122,10 @@ class JbSceneABC(ABC):  # pylint: disable=too-many-public-methods
         """Return asset containers found among the given objects (via instance Empties)."""
 
     @abstractmethod
+    def get_containers_from_instances(self, objects: list[JbObject]) -> list[JbContainer]:
+        """Return asset containers found among the given instances."""
+
+    @abstractmethod
     def move_objects_to_container(self, objects: list[JbObject], container: JbContainer) -> None:
         """Move objects into target collection."""
 
@@ -146,7 +150,7 @@ class JbSceneABC(ABC):  # pylint: disable=too-many-public-methods
         """Create an instance of the given object."""
 
     @abstractmethod
-    def get_asset_from_placeholder(self, obj: JbObject) -> Optional[AssetModel]:
+    def get_names_from_placeholder(self, obj: JbObject) -> List[str]:
         """Extract placeholder info from objects and remove them."""
 
     @abstractmethod
@@ -215,6 +219,10 @@ class JbSceneABC(ABC):  # pylint: disable=too-many-public-methods
     def get_project_filepath(self) -> Optional[str]:
         """Return the current project filepath, if it exists."""
 
+    @abstractmethod
+    def solo(self):
+        """Solo mode with history"""
+
 
 class JbMaterialImporterABC(ABC):
     """Abstract base class for Material Importers."""
@@ -230,6 +238,32 @@ class JbMaterialImporterABC(ABC):
     @abstractmethod
     def import_material(self, asset: AssetModel, file: AssetFile) -> Optional[JbMaterial]:
         """Import a single material file into the scene."""
+
+
+class JbSettingsABC(ABC):
+    """Abstract base class for per-scene settings storage."""
+
+    @abstractmethod
+    def get_export_format(self) -> str:
+        """Return the current export format (e.g. 'fbx', 'abc')."""
+
+    @abstractmethod
+    def load_solo_stack(self) -> list[list]:
+        """Return the full solo-mode history as a list of container lists."""
+
+    @abstractmethod
+    def save_solo_selection(self, containers: list[JbContainer]) -> None:
+        """Push a new solo selection onto the history stack.
+
+        No-op if the selection is identical to the most recent entry.
+        """
+
+    @abstractmethod
+    def pop_solo_selection(self) -> list:
+        """Remove the current selection and return the previous one.
+
+        Returns an empty list if there is no previous entry.
+        """
 
 
 # Asset Protocols
@@ -250,6 +284,9 @@ class JbAssetImporterProtocol(Protocol):
     def _import_single(self, asset: AssetModel) -> None: ...
     def _create_model(self, asset: AssetModel, file: AssetFile) -> JbContainer: ...
     def _convert_to_instances(self, container: JbContainer) -> None: ...
+    def _resolve_placeholder(
+        self, obj: JbObject, container: JbContainer, asset_model: AssetModel
+    ) -> JbContainer | None: ...
 
 
 class JbAssetExporterProtocol(Protocol):

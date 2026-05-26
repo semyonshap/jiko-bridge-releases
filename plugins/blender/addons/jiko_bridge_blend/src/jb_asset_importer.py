@@ -20,6 +20,7 @@ class JbAssetImporter(JbAssetImporterProtocol):
         self.api = JbAPI()
         self.scene = JbScene(source)
         self.materials = JbMaterialImporter(source)
+        self._asset_cache: dict[str, AssetModel | None] = {}
 
     def import_assets(self):
         assets = self._collect_assets()
@@ -73,8 +74,11 @@ class JbAssetImporter(JbAssetImporterProtocol):
             for container in containers:
                 self.scene.clear_container(container)
                 asset_model = self.scene.get_asset_data_from_container(container)
+
                 if not asset_model:
                     continue
+
+                asset_model.active_type = None
                 asset = self.api.get_asset(asset_model)
                 if asset:
                     assets.append(asset)
@@ -107,24 +111,63 @@ class JbAssetImporter(JbAssetImporterProtocol):
         return container
 
     def _convert_to_instances(self, container) -> None:
-        objects = self.scene.walk([container])
-        for obj in objects:
-            if asset_model := self.scene.get_asset_from_placeholder(obj):
-                asset_container = self.scene.get_container(asset_model)
+        queue = [container]
+        self._asset_cache = {}
+        visited = set()
 
-                if not asset_container:
-                    remote_asset = self.api.get_asset(asset_model)
-                    if not remote_asset or not remote_asset.files:
-                        continue
+        while queue:
+            current = queue.pop(0)
+            if id(current) in visited:
+                continue
+            visited.add(id(current))
 
-                    asset_container, exists = self.scene.get_or_create_asset_container(remote_asset)
-                    if not exists:
-                        for file in remote_asset.files:
-                            self.scene.import_with_temp(file.filepath, asset_container)
+            objects = self.scene.walk([current])
+            for obj in objects:
+                asset_model = self._resolve_asset_from_object(obj)
+                if asset_model and (
+                    asset_container := self._resolve_placeholder(obj, current, asset_model)
+                ):
+                    queue.append(asset_container)
 
-                instance = self.scene.create_instance(asset_container, asset_model.asset_name)
-                self.scene.copy_object_transform(instance, obj)
-                self.scene.move_objects_to_container([instance], container)
-                self.scene.remove_object(obj)
+            self.scene.cleanup_container(current)
 
-        self.scene.cleanup_container(container)
+    def _resolve_asset_from_object(self, obj) -> AssetModel | None:
+        names = self.scene.get_names_from_placeholder(obj)
+
+        for name in names:
+            if cached := self._asset_cache.get(name):
+                return cached
+
+            raw_asset = AssetModel.from_string(name)
+            if raw_asset:
+                asset = self.api.get_asset(raw_asset)
+            else:
+                asset = self.api.get_asset_by_search(name)
+
+            self._asset_cache[name] = asset
+
+            if asset:
+                return asset
+
+        return None
+
+    def _resolve_placeholder(self, obj, container, asset_model) -> JbContainer | None:
+        asset_container = self.scene.get_container(asset_model)
+        new_container = None
+
+        if not asset_container:
+            for file in asset_model.files:
+                asset_container, exists = self.scene.get_or_create_asset_container(
+                    asset_model, file
+                )
+                if not exists:
+                    self.scene.import_with_temp(file.filepath, asset_container)
+
+            new_container = asset_container
+
+        instance = self.scene.create_instance(asset_container, asset_model.asset_name)
+        self.scene.copy_object_transform(instance, obj)
+        self.scene.move_objects_to_container([instance], container)
+        self.scene.remove_object(obj)
+
+        return new_container

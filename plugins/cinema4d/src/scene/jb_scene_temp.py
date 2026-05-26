@@ -7,7 +7,6 @@ from contextlib import contextmanager
 
 import c4d
 from src.scene.jb_scene_instance import JbSceneInstance
-from src.jb_utils import JB_ENV
 
 
 class JbSceneTemp(JbSceneInstance):
@@ -32,7 +31,7 @@ class JbSceneTemp(JbSceneInstance):
         try:
             yield tmp_doc
         finally:
-            if debug or JB_ENV == "test":
+            if debug:
                 c4d.documents.InsertBaseDocument(tmp_doc)
                 c4d.documents.SetActiveDocument(tmp_doc)
                 c4d.EventAdd()
@@ -77,12 +76,11 @@ class JbSceneTemp(JbSceneInstance):
             pos = obj.GetRelPos()
             obj.SetRelPos(pos * factor)
 
-    def _make_editable(
-        self,
-        objects: list[c4d.BaseObject],
-        doc: c4d.documents.BaseDocument,
-    ) -> None:
+        self.logger.debug("Project scale: %s objects", len(objects))
+
+    def _make_editable(self, objects: list[c4d.BaseObject]) -> None:
         """Convert generators to polygons (MCOMMAND_MAKEEDITABLE)."""
+        count = 0
         for item in objects:
             if not item.IsAlive():
                 continue
@@ -94,16 +92,20 @@ class JbSceneTemp(JbSceneInstance):
                 command=c4d.MCOMMAND_MAKEEDITABLE,
                 list=[item],
                 mode=c4d.MODELINGCOMMANDMODE_ALL,
-                doc=doc,
+                doc=self._temp_source,
             )
             if isinstance(result, list):
                 for new_obj in result:
-                    doc.InsertObject(new_obj)
+                    count += 1
+                    self._temp_source.InsertObject(new_obj)
                     if parent:
                         new_obj.InsertUnder(parent)
                     for child in children:
                         child.Remove()
                         child.InsertUnder(new_obj)
+
+        if count > 0:
+            self.logger.debug("Editable: %s objects", count)
 
     def _remove_unused_materials(
         self,

@@ -7,10 +7,9 @@ import os
 import importlib
 from typing import Optional
 
-import addon_utils
-import bpy
 
-from .base_scene import BaseScene
+import bpy
+from tests.integration.scene.base_scene import BaseScene
 
 
 class Scene(BaseScene):
@@ -110,16 +109,16 @@ class Scene(BaseScene):
 
         self.update()
 
-    def ensure_loaded(self, addon_name: str | None = None) -> None:
-        addon_name = addon_name or self.ADDON_NAME
-        enabled, _ = addon_utils.check(addon_name)
-        if not enabled:
-            addon_utils.enable(addon_name, default_set=True, persistent=True)
+    def ensure_loaded(self) -> None:
+        addon_name = self.ADDON_NAME
+        try:
+            importlib.import_module(addon_name)
+        except ImportError as exc:
+            raise RuntimeError("Addon is not found in the system.") from exc
 
-    def reset_scene(self, addon_name: str | None = None) -> None:
+    def reset_scene(self) -> None:
         bpy.ops.wm.read_factory_settings(use_empty=True)
-        self.ensure_loaded(addon_name)
-        self.update()
+        bpy.ops.preferences.addon_enable(module=self.ADDON_NAME)
 
     def save_document(self, filename: str) -> str:
         logs_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "logs"))
@@ -160,11 +159,25 @@ class Scene(BaseScene):
         return hierarchy
 
     def get_instance_objects(self) -> list[bpy.types.Object]:
+        if not (scene := bpy.context.scene) or not (collection := scene.collection):
+            return []
+
+        objects = collection.objects
+
         return [
             obj
-            for obj in bpy.data.objects
+            for obj in objects
             if obj.instance_type == "COLLECTION" and obj.instance_collection is not None
         ]
 
     def get_children_container(self, container: bpy.types.Collection) -> list[bpy.types.Object]:
         return list(container.objects)
+
+    def set_export_format(self, fmt: str) -> None:
+        s = self.source.scene
+        if s is None:
+            raise RuntimeError("No active scene.")
+        jb_settings = getattr(s, "jb_settings", None)
+        if jb_settings is None:
+            raise RuntimeError("jb_settings are not registered on the scene.")
+        jb_settings.export_format = fmt

@@ -104,6 +104,18 @@ class JbSceneContainer(JbSceneObjects):
             if obj.CheckType(c4d.Onull) and self.get_asset_data_from_container(obj) is not None
         ]
 
+    def get_containers_from_instances(self, objects) -> list[JbContainer]:
+        containers = []
+        for obj in objects:
+            if not obj.CheckType(c4d.Oinstance):
+                continue
+            linked = obj[c4d.INSTANCEOBJECT_LINK]
+            if linked is None or not linked.IsAlive():
+                continue
+            if self.get_asset_data_from_container(linked) is not None:
+                containers.append(linked)
+        return containers
+
     def move_objects_to_container(self, objects, container) -> None:
         """Unified API: re-parents objects under asset null."""
         for obj in objects:
@@ -111,9 +123,22 @@ class JbSceneContainer(JbSceneObjects):
             obj.InsertUnder(container)
 
     def cleanup_container(self, container) -> None:
-        for obj in container.GetChildren():
-            if obj.GetType() in (c4d.Onull, c4d.Oalembicgenerator) and len(obj.GetChildren()) == 0:
+        count = 0
+        objects = self.walk(container.GetChildren())
+        for obj in objects:
+            if obj.GetType() == c4d.Onull and len(obj.GetChildren()) == 0:
+                count += 1
                 obj.Remove()
+
+            elif obj.GetType() == c4d.Oalembicgenerator and len(obj.GetChildren()) == 0:
+                has_geometry = obj[c4d.ALEMBIC_UPDATE_GEOMETRY]
+
+                if not has_geometry:
+                    count += 1
+                    obj.Remove()
+
+        if count > 0:
+            self.logger.debug('Cleanup empty nulls: %s', count)
 
         c4d.CallCommand(12168)
 

@@ -8,8 +8,7 @@ import importlib
 from typing import Optional
 
 import c4d
-
-from .base_scene import BaseScene
+from tests.integration.scene.base_scene import BaseScene
 
 
 class Scene(BaseScene):
@@ -58,14 +57,14 @@ class Scene(BaseScene):
         obj.SetBit(c4d.BIT_ACTIVE)
         c4d.EventAdd()
         return obj
-    
+
     def create_scene_material(self, name: str) -> c4d.BaseMaterial:
         material = c4d.BaseMaterial(c4d.Mmaterial)
         material.SetName(name)
         self.source.InsertMaterial(material)
         c4d.EventAdd()
         return material
-    
+
     def get_all_materials(self) -> list[c4d.BaseMaterial]:
         materials = []
         mat = self.source.GetFirstMaterial()
@@ -110,7 +109,9 @@ class Scene(BaseScene):
 
     def get_instance_objects(self) -> list[c4d.BaseObject]:
         result: list[c4d.BaseObject] = []
+
         obj = self._source.GetFirstObject()
+
         while obj:
             if obj.CheckType(c4d.Oinstance):
                 result.append(obj)
@@ -153,9 +154,15 @@ class Scene(BaseScene):
         obj.InsertTag(tag)
         c4d.EventAdd()
         return True
-    
+
     def get_children_container(self, container: c4d.BaseObject) -> list[c4d.BaseObject]:
-        return container.GetChildren() if container else []
+        if not container:
+            return []
+        result = []
+        for child in container.GetChildren():
+            result.append(child)
+            result.extend(self.get_children_container(child))
+        return result
 
     def reset_scene(self) -> None:
         current = c4d.documents.GetActiveDocument()
@@ -166,3 +173,13 @@ class Scene(BaseScene):
         c4d.documents.SetActiveDocument(new_doc)
         self._source = new_doc
         c4d.EventAdd()
+
+    def set_export_format(self, fmt: str) -> None:
+        jb_settings = importlib.import_module("src.jb_settings")
+        combo_options_export_format = jb_settings.COMBO_OPTIONS_EXPORT_FORMAT
+        jb_settings_mod = jb_settings.JbSettings
+
+        if fmt not in combo_options_export_format:
+            raise ValueError(f"Unknown format '{fmt}'. Valid: {combo_options_export_format}")
+        index = combo_options_export_format.index(fmt)
+        jb_settings_mod(self.source).set_export_format(index)

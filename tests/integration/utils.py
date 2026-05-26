@@ -3,7 +3,11 @@ Api helper
 Code by Semyon Shapoval, 2026
 """
 
+import time
 import logging
+import http.client
+import urllib.parse
+
 from copy import copy
 from inspect import signature
 from typing import Any, Callable
@@ -17,6 +21,10 @@ logging.basicConfig(
 def get_logger(name: str) -> logging.Logger:
     """Returns a logger instance with the specified name."""
     return logging.getLogger(name)
+
+
+logger = get_logger(__name__)
+WEBDAV_BASE_URL = "http://127.0.2.1/jiko-bridge"
 
 
 def make_injected_create_asset(asset_model: Any, original_create_asset: Callable[..., Any]):
@@ -52,3 +60,43 @@ def make_injected_create_asset(asset_model: Any, original_create_asset: Callable
         return original_create_asset(**merged)
 
     return payload_capture, injected_create_asset
+
+
+def file_exists(filepath: str, timeout: float = 40.0, poll_interval: float = 3.0) -> bool:
+    """Check exists file to appear on WebDAV server."""
+    relative = filepath.replace("\\", "/").removeprefix("J:")
+    url = WEBDAV_BASE_URL + relative
+
+    deadline = time.monotonic() + timeout
+    attempt = 0
+    found = False
+
+    while time.monotonic() < deadline:
+        attempt += 1
+        try:
+            parsed = urllib.parse.urlparse(url)
+            conn = http.client.HTTPConnection(parsed.netloc, timeout=5)
+            try:
+                conn.request("PROPFIND", parsed.path)
+                resp = conn.getresponse()
+                found = resp.status in (200, 207)
+            finally:
+                conn.close()
+
+            if found:
+                break
+
+        # pylint: disable=broad-exception-caught
+        except Exception as e:
+            logger.warning("Attempt %d — PROPFIND error for %s: %s", attempt, url, e)
+
+        time.sleep(poll_interval)
+
+    elapsed = timeout - (deadline - time.monotonic())
+
+    if found:
+        logger.info("File found at attempt %d (%.1fs): %s", attempt, elapsed, url)
+    else:
+        raise FileNotFoundError(f"File not found after {attempt} attempts: {url}")
+
+    return found

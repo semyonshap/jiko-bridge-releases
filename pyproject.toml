@@ -1,3 +1,13 @@
+[dependency-groups]
+dev = [
+  "stickytape",
+  "mypy",
+  "pylint",
+  "fake-bpy-module-latest",
+  "build",
+  "twine",
+]
+
 [tool.mypy]
 ignore_missing_imports = true
 show_error_codes = true
@@ -29,5 +39,9 @@ generated-members = ["c4d.*"]
 [tool.pylint."MESSAGES CONTROL"]
 disable = [
     "too-few-public-methods",
-    "broad-exception-caught"
+    "broad-exception-caught",
+
+    "missing-module-docstring",
+    "too-many-arguments",
+    "too-many-positional-arguments"
 ]

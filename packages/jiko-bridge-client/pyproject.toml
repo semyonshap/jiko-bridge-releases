@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jiko-bridge-client"
+dynamic = ["version"]
+description = "Shared models, HTTP API client and integration contracts for Jiko Bridge DCC plugins."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Semyon Shapoval" }]
+keywords = [
+    "jiko",
+    "bridge",
+    "asset",
+    "pipeline",
+    "dcc",
+    "blender",
+    "cinema4d",
+    "maya",
+    "houdini",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://with-jiko.com"
+Tracker = "https://t.me/withjiko"
+
+[tool.hatch.version]
+path = "jiko_bridge_client/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["jiko_bridge_client"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/jiko_bridge_client",
+    "/README.md",
+    "/LICENSE",
+]

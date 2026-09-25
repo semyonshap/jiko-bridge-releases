@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 name = "jiko-bundler"
 version = "0.1.0"
 description = "Build readable, flat Python bundles without runtime loaders."
-readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Semyon Shapoval" }]
 dependencies = []

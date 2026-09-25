@@ -1,3 +1,5 @@
+from typing import TypeAlias
+
 import c4d
 
 from jiko_bridge_client import (
@@ -8,17 +10,17 @@ from jiko_bridge_client import (
     JbSettingsABC,
 )
 
-JbSource = c4d.documents.BaseDocument
-JbMatrix = c4d.Matrix
+JbSource: TypeAlias = c4d.documents.BaseDocument
+JbMatrix: TypeAlias = c4d.Matrix
 
-JbContainer = c4d.BaseObject
-JbObject = c4d.BaseObject
-JbMaterial = c4d.BaseMaterial
+JbContainer: TypeAlias = c4d.BaseObject
+JbObject: TypeAlias = c4d.BaseObject
+JbMaterial: TypeAlias = c4d.BaseMaterial
 
-JbData = JbContainer | JbObject | JbMaterial
+JbData: TypeAlias = JbContainer | JbObject | JbMaterial
 
-JbSceneBase = JbSceneABC[JbSource, JbMatrix, JbContainer, JbObject, JbMaterial]
-JbMaterialImporterBase = JbMaterialImporterABC[JbMaterial]
-JbSettingsBase = JbSettingsABC[JbContainer]
-JbAssetImporterBase = JbAssetImporterABC[JbContainer, JbObject, JbMaterial]
-JbAssetExporterBase = JbAssetExporterABC[JbContainer, JbObject, JbMaterial]
+JbSceneBase: TypeAlias = JbSceneABC[JbSource, JbMatrix, JbContainer, JbObject, JbMaterial]
+JbMaterialImporterBase: TypeAlias = JbMaterialImporterABC[JbMaterial]
+JbSettingsBase: TypeAlias = JbSettingsABC[JbContainer]
+JbAssetImporterBase: TypeAlias = JbAssetImporterABC[JbContainer, JbObject, JbMaterial]
+JbAssetExporterBase: TypeAlias = JbAssetExporterABC[JbContainer, JbObject, JbMaterial]

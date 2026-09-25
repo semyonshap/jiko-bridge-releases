@@ -41,9 +41,11 @@ class JbMaterialImporter(JbMaterialImporterBase):
         return None
 
     def get_material_name(self, material: c4d.BaseMaterial) -> str | None:
+        """Return the material name, or None without a material."""
         return material.GetName() if material else None
 
     def set_material_name(self, material: c4d.BaseMaterial, name: str):
+        """Rename the material in place."""
         if material:
             material.SetName(name)
 

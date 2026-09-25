@@ -112,7 +112,7 @@ class _StringAnnotations(ast.NodeTransformer):
 class _ImportBlock:
     """Collect unconditional imports, preserving aliases and distinct submodules."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.statements: list[ast.stmt] = []
         self.seen: set[tuple[str, str, int, str, str | None]] = set()
         self.groups: dict[tuple[str, int], ast.ImportFrom] = {}
@@ -150,10 +150,10 @@ class _FlattenModules(ast.NodeTransformer):
         self.builder = builder
         self.module = module
 
-    def visit_Attribute(self, node):
+    def visit_Attribute(self, node: ast.Attribute) -> ast.AST:
         """Resolve the longest known module prefix before visiting its root name."""
         parts: list[str] = []
-        root = node
+        root: ast.expr = node
         while isinstance(root, ast.Attribute):
             parts.insert(0, root.attr)
             root = root.value
@@ -185,7 +185,13 @@ class _FlattenModules(ast.NodeTransformer):
 
 
 class _Builder:
-    def __init__(self, entry, search_paths, external, strip_docstrings):
+    def __init__(
+        self,
+        entry: str | Path,
+        search_paths: Iterable[str | Path],
+        external: Iterable[str],
+        strip_docstrings: bool,
+    ) -> None:
         self.entry = Path(entry).resolve()
         self.roots = tuple(
             dict.fromkeys([Path(path).resolve() for path in search_paths] + [self.entry.parent])

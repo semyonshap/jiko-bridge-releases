@@ -40,6 +40,7 @@ class JbSettings(JbSettingsBase):
         return [obj for _, obj in bc if isinstance(obj, c4d.BaseObject) and obj.IsAlive()]
 
     def get_export_format(self) -> str:
+        """Return the export format stored in the document."""
         bc = self._get_container()
         index = bc.GetInt32(self._SETTING_EXPORT_FORMAT, 0)
         return COMBO_OPTIONS_EXPORT_FORMAT[index]
@@ -51,6 +52,7 @@ class JbSettings(JbSettingsBase):
         self._save_container(bc)
 
     def load_solo_stack(self) -> list[list]:
+        """Return the stored solo selections, newest first."""
         root_bc = self._doc.GetDataInstance().GetContainer(self._SOLO_STACK_ID)
         return [
             self._bc_to_entry(root_bc.GetContainer(i))
@@ -59,6 +61,7 @@ class JbSettings(JbSettingsBase):
         ]
 
     def save_solo_selection(self, containers) -> None:
+        """Push a solo selection onto the stored stack."""
         stack = self.load_solo_stack()
 
         if stack:
@@ -76,6 +79,7 @@ class JbSettings(JbSettingsBase):
         self._doc.GetDataInstance().SetContainer(self._SOLO_STACK_ID, root_bc)
 
     def pop_solo_selection(self) -> list:
+        """Return the previous solo selection and drop it from the stack."""
         stack = self.load_solo_stack()
         if len(stack) < 2:
             return []

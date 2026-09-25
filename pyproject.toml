@@ -3,8 +3,6 @@ dev = [
   "mypy",
   "pylint",
   "fake-bpy-module-latest",
-  "build",
-  "twine",
   "black",
   "isort"
 ]
@@ -16,6 +14,11 @@ pretty = true
 follow_imports = "normal"
 namespace_packages = true
 explicit_package_bases = true
+mypy_path = [
+    "packages/jiko-bridge-c4d",
+    "packages/jiko-bridge-client",
+    "packages/jiko-bundler",
+]
 
 [[tool.mypy.overrides]]
 module = ["c4d", "c4d.*", "maxon", "maxon.*"]
@@ -44,5 +47,7 @@ disable = [
 
     "missing-module-docstring",
     "too-many-arguments",
-    "too-many-positional-arguments"
+    "too-many-positional-arguments",
+    "too-many-branches",
+    "too-many-ancestors"
 ]

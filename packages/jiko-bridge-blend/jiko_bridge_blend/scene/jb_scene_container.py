@@ -1,13 +1,10 @@
-"""
-Scene container management for Blender
-Code by Semyon Shapoval, 2026
-"""
-
 from typing import Optional
 
 import bpy
 
-from ..jb_types import AssetModel, JbContainer
+from jiko_bridge_client import AssetModel
+
+from ..jb_types import JbContainer
 from .jb_scene_objects import JbSceneObjects
 
 

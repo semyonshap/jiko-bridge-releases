@@ -1,8 +1,3 @@
-"""
-Import and export file handling for Jiko Bridge in Blender.
-Code by Semyon Shapoval, 2026
-"""
-
 import os
 import tempfile
 import uuid

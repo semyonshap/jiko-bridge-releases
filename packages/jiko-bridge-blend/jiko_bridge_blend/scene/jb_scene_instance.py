@@ -1,8 +1,3 @@
-"""
-Instance managament and placeholder extraction for Blender.
-Code by Semyon Shapoval, 2026
-"""
-
 from __future__ import annotations
 
 from typing import List

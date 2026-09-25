@@ -1,16 +1,11 @@
-"""
-Jiko Bridge - Blender Addon
-Code by Semyon Shapoval, 2026
-"""
-
 import bpy
 
-from .src.jb_asset_exporter import JbAssetExporter
-from .src.jb_asset_importer import JbAssetImporter
-from .src.jb_commands import JB_MT_PIE_AssetActions, JB_PT_Commands
-from .src.jb_settings import register_settings, unregister_settings
-from .src.jb_utils import register_keymap, reload_plugin_modules, unregister_keymap
-from .src.scene.jb_scene import JbScene
+from .jb_asset_exporter import JbAssetExporter
+from .jb_asset_importer import JbAssetImporter
+from .jb_commands import JB_MT_PIE_AssetActions, JB_PT_Commands
+from .jb_settings import register_settings, unregister_settings
+from .jb_utils import register_keymap, unregister_keymap
+from .scene.jb_scene import JbScene
 
 
 class JB_OT_AssetImport(bpy.types.Operator):  # pylint: disable=invalid-name
@@ -64,20 +59,8 @@ class JB_OT_Solo(bpy.types.Operator):  # pylint: disable=invalid-name
         return {"FINISHED"}
 
 
-class JB_OT_Reload(bpy.types.Operator):  # pylint: disable=invalid-name
-    """Reloads the Jiko Bridge addon."""
-
-    bl_idname = "jiko_bridge.reload"
-    bl_label = "Reload Addon"
-
-    def execute(self, _context):
-        reload_plugin_modules()
-        return {"FINISHED"}
-
-
 classes = [
     JB_PT_Commands,
-    JB_OT_Reload,
     JB_OT_Solo,
     JB_OT_AssetExport,
     JB_OT_AssetImport,

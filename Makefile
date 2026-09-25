@@ -27,15 +27,6 @@ format:
 	$(PYTHON) -m black plugins packages
 	$(PYTHON) -m isort plugins packages
 
-lint:
-	make blend-lint
-	make pkg-lint
-	make diff-all
-
-typecheck:
-	make blend-typecheck
-	make pkg-typecheck
-
 c4d-test:
 	@cls
 	@echo "Running C4D tests..."
@@ -53,11 +44,10 @@ blend-run:
 	@set "BLENDER_USER_SCRIPTS=$(ROOT_ADDONS_PATH)" && \
 	"$(BLENDER_PATH)" --addons $(ADDON_NAME)
 
-blend-lint:
-	$(PYTHON) -m pylint --rcfile=pyproject.toml plugins/blender/addons/$(ADDON_NAME) tests/integration
-
-blend-typecheck:
-	$(PYTHON) -m mypy --config-file pyproject.toml plugins/blender/addons/$(ADDON_NAME) tests/integration
+blend-dev-run: ## Run Blender with the development addon (editable sources)
+	@echo "Running Blender (dev)..."
+	@set "BLENDER_USER_SCRIPTS=$(ROOT_DEV_ADDONS_PATH)" && \
+	"$(BLENDER_PATH)" --addons $(DEV_ADDON_NAME)
 
 
 blend-test:

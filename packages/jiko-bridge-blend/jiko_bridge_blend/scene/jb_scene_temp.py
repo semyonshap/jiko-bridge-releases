@@ -1,8 +1,3 @@
-"""
-Temporary scene helpers for Jiko Bridge Blender plugin
-Code by Semyon Shapoval, 2026
-"""
-
 from contextlib import contextmanager
 
 import bpy

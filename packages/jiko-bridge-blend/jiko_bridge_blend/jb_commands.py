@@ -1,8 +1,3 @@
-"""
-Commands Module
-Code by Semyon Shapoval, 2026
-"""
-
 import bpy
 
 from .jb_settings import JbSettings
@@ -30,9 +25,6 @@ class JB_PT_Commands(bpy.types.Panel):  # pylint: disable=invalid-name
 
         col.separator()
 
-        col.operator("jiko_bridge.reload", text="Reload Addon", icon="FILE_REFRESH")
-
-        col.separator()
         settings = JbSettings(context).scene_settings
         if settings is not None:
             box = col.box()

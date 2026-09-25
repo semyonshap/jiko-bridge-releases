@@ -1,43 +1,4 @@
-"""
-Utility functions for Jiko Bridge Blender plugin.
-Code by Semyon Shapoval, 2026
-"""
-
-import logging
-import sys
-
-import addon_utils
 import bpy
-
-
-def get_logger(name: str) -> logging.Logger:
-    """Get a logger."""
-    logger = logging.getLogger(name)
-
-    if logger.handlers:
-        return logger
-
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(
-        "[Jiko Bridge] %(levelname)s [%(name)s] %(message)s", datefmt="%H:%M:%S"
-    )
-
-    console = logging.StreamHandler()
-    console.setLevel(logging.DEBUG)
-    console.setFormatter(formatter)
-    logger.addHandler(console)
-    logger.propagate = False
-
-    return logger
-
-
-def reload_plugin_modules(addon_module_name: str = "jiko_bridge_blend") -> None:
-    """Reload the addon modules by disabling and enabling the addon."""
-    addon_utils.disable(addon_module_name)
-    to_remove = [k for k in list(sys.modules) if addon_module_name in k]
-    for k in to_remove:
-        del sys.modules[k]
-    addon_utils.enable(addon_module_name)
 
 
 addon_keymaps: list = []

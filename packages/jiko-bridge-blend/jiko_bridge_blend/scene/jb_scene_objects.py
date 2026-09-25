@@ -1,18 +1,12 @@
-"""
-Tree scene helpers for Jiko Bridge Blender plugin
-Code by Semyon Shapoval, 2026
-"""
-
 import re
 from typing import Generator, Optional
 
 import bpy
 
-from ..jb_protocols import JbSceneABC
-from ..jb_types import JbContainer, JbData, JbMaterial, JbObject
+from ..jb_types import JbContainer, JbData, JbMaterial, JbObject, JbSceneBase
 
 
-class JbSceneObjects(JbSceneABC):
+class JbSceneObjects(JbSceneBase):
     """Object operations for Scene."""
 
     @property

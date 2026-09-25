@@ -1,21 +1,15 @@
-"""
-Asset exporter for Jiko Bridge
-Code by Semyon Shapoval, 2026
-"""
-
 from pathlib import Path
 
-from .jb_api import JbAPI
-from .jb_protocols import JbAssetExporterProtocol
+from jiko_bridge_client import AssetFile, AssetModel, JbAPI, get_logger
+
 from .jb_settings import JbSettings
-from .jb_types import AssetFile, AssetModel, JbSource
-from .jb_utils import get_logger
+from .jb_types import JbAssetExporterBase, JbSource
 from .scene.jb_scene import JbScene
 
 logger = get_logger(__name__)
 
 
-class JbAssetExporter(JbAssetExporterProtocol):
+class JbAssetExporter(JbAssetExporterBase):
     """Export asset class"""
 
     def __init__(self, source: JbSource):

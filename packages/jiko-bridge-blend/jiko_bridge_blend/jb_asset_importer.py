@@ -1,19 +1,13 @@
-"""
-Importer from Jiko Bridge
-Code by Semyon Shapoval, 2026
-"""
+from jiko_bridge_client import AssetModel, JbAPI, get_logger
 
-from .jb_api import JbAPI
-from .jb_protocols import JbAssetImporterProtocol
-from .jb_types import AssetModel, JbContainer, JbMaterial, JbSource
-from .jb_utils import get_logger
+from .jb_types import JbAssetImporterBase, JbContainer, JbMaterial, JbSource
 from .materials.jb_material_importer import JbMaterialImporter
 from .scene.jb_scene import JbScene
 
 logger = get_logger(__name__)
 
 
-class JbAssetImporter(JbAssetImporterProtocol):
+class JbAssetImporter(JbAssetImporterBase):
     """Handles importing assets from Jiko Bridge into scene."""
 
     def __init__(self, source: JbSource):

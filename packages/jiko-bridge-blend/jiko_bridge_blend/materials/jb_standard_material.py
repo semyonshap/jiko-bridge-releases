@@ -1,11 +1,7 @@
-"""
-Standard (Principled BSDF) material implementation for Blender.
-Code by Semyon Shapoval, 2026
-"""
-
 import bpy
 
-from ..jb_utils import get_logger
+from jiko_bridge_client import get_logger
+
 from .jb_base_node_material import JBBaseNodeMaterial
 
 logger = get_logger(__name__)

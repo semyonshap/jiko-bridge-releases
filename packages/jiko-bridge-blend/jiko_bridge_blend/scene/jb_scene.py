@@ -1,16 +1,12 @@
-"""
-Scene management for Jiko Bridge Blender plugin
-Code by Semyon Shapoval, 2026
-"""
-
 from logging import Logger
 from typing import Optional
 
 import bpy
 
+from jiko_bridge_client import get_logger
+
 from ..jb_settings import JbSettings
 from ..jb_types import JbSource
-from ..jb_utils import get_logger
 from .jb_scene_temp import JBSceneTemp
 
 

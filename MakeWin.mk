@@ -17,9 +17,11 @@ DESKTOP      := $(USERPROFILE)\Desktop
 
 # Название аддона для Blender
 ADDON_NAME := jiko_bridge_blend
+DEV_ADDON_NAME := jiko_bridge_blend_dev
 
 # Путь к папке с аддонами проекта
 ROOT_ADDONS_PATH  := $(CURDIR)/plugins/blender
+ROOT_DEV_ADDONS_PATH := $(CURDIR)/plugins/blender-dev
 C4D_PLUGIN_PATH := $(CURDIR)/plugins/cinema4d
 BLENDER_PLUGIN_PATH := $(ROOT_ADDONS_PATH)/addons/$(ADDON_NAME)
 

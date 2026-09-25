@@ -1,11 +1,6 @@
-"""
-Settings for plugin management
-Code by Semyon Shapoval, 2026
-"""
-
 import bpy
 
-from .jb_protocols import JbSettingsABC
+from .jb_types import JbSettingsBase
 
 ADDON_ID = __package__.split('.', maxsplit=1)[0]
 _SOLO_STACK_SIZE = 5
@@ -46,7 +41,7 @@ class JB_PG_SceneSettings(bpy.types.PropertyGroup):  # pylint: disable=invalid-n
     )
 
 
-class JbSettings(JbSettingsABC):
+class JbSettings(JbSettingsBase):
     """Wrapper for accessing Jiko Bridge addon preferences."""
 
     def __init__(self, context: bpy.types.Context):

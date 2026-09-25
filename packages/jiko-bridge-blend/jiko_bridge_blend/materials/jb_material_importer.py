@@ -1,21 +1,16 @@
-"""
-Material Importer for Jiko Bridge Blender plugin
-Code by Semyon Shapoval, 2026
-"""
-
 from typing import Optional
 
 import bpy
 
-from ..jb_protocols import JbMaterialImporterABC
-from ..jb_types import AssetFile, AssetModel
-from ..jb_utils import get_logger
+from jiko_bridge_client import AssetFile, AssetModel, get_logger
+
+from ..jb_types import JbMaterialImporterBase
 from .jb_standard_material import JBStandardMaterial
 
 logger = get_logger(__name__)
 
 
-class JbMaterialImporter(JbMaterialImporterABC):
+class JbMaterialImporter(JbMaterialImporterBase):
     """Material importer that handles Blender materials."""
 
     def __init__(self, source):

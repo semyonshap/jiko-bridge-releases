@@ -1,8 +1,3 @@
-"""
-File import/export layer for Cinema 4D.
-Code by Semyon Shapoval, 2026
-"""
-
 import os
 import tempfile
 import time

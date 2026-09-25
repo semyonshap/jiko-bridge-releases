@@ -1,8 +1,3 @@
-"""
-High-level scene operations for Cinema 4D.
-Code by Semyon Shapoval, 2026
-"""
-
 import os
 from typing import Optional
 from logging import Logger

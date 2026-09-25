@@ -1,8 +1,3 @@
-"""
-Scene container management for Cinema 4D.
-Code by Semyon Shapoval, 2026
-"""
-
 from typing import Optional
 
 import c4d

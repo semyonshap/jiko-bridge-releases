@@ -1,8 +1,3 @@
-"""
-Temporary document for operations.
-Code by Semyon Shapoval, 2026
-"""
-
 from contextlib import contextmanager
 
 import c4d

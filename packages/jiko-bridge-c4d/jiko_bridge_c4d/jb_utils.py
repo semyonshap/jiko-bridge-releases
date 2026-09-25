@@ -1,32 +1,8 @@
-"""
-Utility functions for the Jiko Bridge Cinema 4D plugin.
-Code by Semyon Shapoval, 2026
-"""
-
 import os
 import sys
 from contextlib import contextmanager
-from typing import Callable
 
 import c4d
-
-_JB_RELOAD_HANDLER: Callable[[], bool] | None = None
-
-
-def set_reload_handler(handler: Callable[[], bool] | None) -> None:
-    """Connect the optional source-development reload controller."""
-    global _JB_RELOAD_HANDLER  # pylint: disable=global-statement
-    _JB_RELOAD_HANDLER = handler
-
-
-def is_development() -> bool:
-    """Whether the development entry point has attached a reload controller."""
-    return _JB_RELOAD_HANDLER is not None
-
-
-def reload_plugin_modules() -> bool:
-    """Reload sources in development; the release has no reload controller."""
-    return _JB_RELOAD_HANDLER() if _JB_RELOAD_HANDLER is not None else False
 
 
 def is_headless() -> bool:

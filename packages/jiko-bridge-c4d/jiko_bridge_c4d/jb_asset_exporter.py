@@ -1,8 +1,3 @@
-"""
-Asset exporter for Jiko Bridge
-Code by Semyon Shapoval, 2026
-"""
-
 from pathlib import Path
 
 from jiko_bridge_c4d.jb_settings import JbSettings

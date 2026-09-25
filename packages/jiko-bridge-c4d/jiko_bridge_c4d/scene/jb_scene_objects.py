@@ -1,8 +1,3 @@
-"""
-Scene tree traversal and querying.
-Code by Semyon Shapoval, 2026
-"""
-
 import re
 
 import c4d

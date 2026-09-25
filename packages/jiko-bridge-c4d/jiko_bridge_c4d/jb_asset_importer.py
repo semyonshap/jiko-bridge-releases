@@ -1,8 +1,3 @@
-"""
-Importer from Jiko Bridge
-Code by Semyon Shapoval, 2026
-"""
-
 from jiko_bridge_c4d.jb_types import (
     JbAssetImporterBase,
     JbContainer,

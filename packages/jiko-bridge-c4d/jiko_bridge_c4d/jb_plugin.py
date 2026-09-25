@@ -1,7 +1,3 @@
-"""
-Cinema 4D plugin entry point: CommandData class and registration.
-"""
-
 import c4d
 
 from jiko_bridge_c4d.jb_commands import JbCommandsPopup

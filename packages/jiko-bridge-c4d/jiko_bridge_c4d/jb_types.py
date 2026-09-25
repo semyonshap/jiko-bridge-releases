@@ -1,8 +1,3 @@
-"""
-Cinema 4D types, bound to the shared Jiko Bridge contracts.
-Code by Semyon Shapoval, 2026
-"""
-
 import c4d
 
 from jiko_bridge_client import (

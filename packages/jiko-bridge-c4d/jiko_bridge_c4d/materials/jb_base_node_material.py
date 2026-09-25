@@ -1,8 +1,3 @@
-"""
-Base node material class for Cinema 4D.
-Code by Semyon Shapoval, 2026
-"""
-
 from __future__ import annotations
 from typing import Optional
 

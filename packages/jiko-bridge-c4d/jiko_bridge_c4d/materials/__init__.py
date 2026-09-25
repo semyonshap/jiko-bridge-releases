@@ -1,8 +1,3 @@
-"""
-Materials module for Jiko Bridge Cinema 4D plugin.
-Code by Semyon Shapoval, 2026
-"""
-
 from jiko_bridge_c4d.materials.jb_base_node_material import JbBaseNodeMaterial
 
 from jiko_bridge_c4d.materials.jb_standard_node_material import JbStandardNodeMaterial

@@ -44,7 +44,7 @@ class JbSceneContainer(JbSceneObjects):
 
         self._set_protection_tag(asset_null)
 
-        self._set_user_data(asset_null, "databaseName", asset.database_name)
+        self._set_user_data(asset_null, "vaultName", asset.vault_name)
         self._set_user_data(asset_null, "packName", asset.pack_name)
         self._set_user_data(asset_null, "assetName", asset.asset_name)
         if file:
@@ -56,14 +56,14 @@ class JbSceneContainer(JbSceneObjects):
         return asset_null, asset_existed
 
     def set_asset_data(self, container, asset, file=None) -> None:
-        self._set_user_data(container, "databaseName", asset.database_name)
+        self._set_user_data(container, "vaultName", asset.vault_name)
         self._set_user_data(container, "packName", asset.pack_name)
         self._set_user_data(container, "assetName", asset.asset_name)
         if file:
             self._set_user_data(container, "assetType", file.asset_type)
 
     def get_asset_data_from_container(self, container) -> Optional[AssetModel]:
-        pack_name = asset_name = asset_type = database_name = None
+        pack_name = asset_name = asset_type = vault_name = None
 
         for key, bc in container.GetUserDataContainer() or []:
             bc_name = bc[c4d.DESC_NAME]
@@ -73,8 +73,8 @@ class JbSceneContainer(JbSceneObjects):
                 asset_name = container[key]
             elif bc_name == "assetType":
                 asset_type = container[key] or None
-            elif bc_name == "databaseName":
-                database_name = container[key] or None
+            elif bc_name == "vaultName":
+                vault_name = container[key] or None
 
         if not (pack_name and asset_name):
             return None
@@ -83,7 +83,7 @@ class JbSceneContainer(JbSceneObjects):
             pack_name=pack_name,
             asset_name=asset_name,
             active_type=asset_type,
-            database_name=database_name,
+            vault_name=vault_name,
         )
 
     def copy_asset_data(self, src, dst) -> None:

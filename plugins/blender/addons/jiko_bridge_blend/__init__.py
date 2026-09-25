@@ -63,14 +63,14 @@ class AssetFile:
 class AssetModel:
     """Represents a complete asset with its metadata and associated files."""
 
-    database_name: Optional[str] = None
+    vault_name: Optional[str] = None
     pack_name: Optional[str] = None
     asset_name: Optional[str] = None
     active_type: Optional[str] = None
     files: List[AssetFile] = field(default_factory=list)
 
     def __hash__(self) -> int:
-        return hash((self.database_name, self.pack_name, self.asset_name))
+        return hash((self.vault_name, self.pack_name, self.asset_name))
 
     @classmethod
     def from_string(cls, value: str) -> Optional['AssetModel']:
@@ -86,7 +86,7 @@ class AssetModel:
     def from_dict(cls, data: dict) -> 'AssetModel':
         """Create an AssetModel instance from a dictionary."""
         return cls(
-            database_name=data.get('databaseName'),
+            vault_name=data.get('vaultName'),
             pack_name=data.get('packName'),
             asset_name=data.get('assetName'),
             files=[AssetFile.from_dict(f) for f in data.get('files', [])],
@@ -98,8 +98,8 @@ class AssetModel:
         files = list(self.files)
         if self.active_type:
             files.append(AssetFile(asset_type=self.active_type))
-        if self.database_name:
-            result['databaseName'] = self.database_name
+        if self.vault_name:
+            result['vaultName'] = self.vault_name
         if self.pack_name:
             result['packName'] = self.pack_name
         if self.asset_name:
@@ -913,24 +913,24 @@ class JbSceneContainer(JbSceneObjects):
         container['jb_pack_name'] = asset.pack_name or ''
         container['jb_asset_name'] = asset.asset_name or ''
         container['jb_asset_type'] = file.asset_type or '' if file else ''
-        container['jb_database_name'] = asset.database_name or ''
+        container['jb_vault_name'] = asset.vault_name or ''
 
     def get_asset_data_from_container(self, container) -> Optional[AssetModel]:
         pack_name = container.get('jb_pack_name', None)
         asset_name = container.get('jb_asset_name', None)
         asset_type = container.get('jb_asset_type', None)
-        database_name = container.get('jb_database_name', None)
+        vault_name = container.get('jb_vault_name', None)
         if not (pack_name and asset_name):
             return None
         return AssetModel(
             pack_name=pack_name,
             asset_name=asset_name,
             active_type=asset_type,
-            database_name=database_name,
+            vault_name=vault_name,
         )
 
     def copy_asset_data(self, src, dst) -> None:
-        for key in ('jb_pack_name', 'jb_asset_name', 'jb_asset_type', 'jb_database_name'):
+        for key in ('jb_pack_name', 'jb_asset_name', 'jb_asset_type', 'jb_vault_name'):
             if key in src:
                 dst[key] = src[key]
 
@@ -973,7 +973,7 @@ class JbSceneInstance(JbSceneContainer):
         empty['jb_pack_name'] = container.get('jb_pack_name', '')
         empty['jb_asset_name'] = container.get('jb_asset_name', '')
         empty['jb_asset_type'] = container.get('jb_asset_type', '')
-        empty['jb_database_name'] = container.get('jb_database_name', '')
+        empty['jb_vault_name'] = container.get('jb_vault_name', '')
         scene = self.source.scene
         if scene is not None and scene.collection is not None:
             scene.collection.objects.link(empty)

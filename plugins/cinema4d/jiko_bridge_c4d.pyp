@@ -70,14 +70,14 @@ class AssetFile:
 class AssetModel:
     """Represents a complete asset with its metadata and associated files."""
 
-    database_name: Optional[str] = None
+    vault_name: Optional[str] = None
     pack_name: Optional[str] = None
     asset_name: Optional[str] = None
     active_type: Optional[str] = None
     files: List[AssetFile] = field(default_factory=list)
 
     def __hash__(self) -> int:
-        return hash((self.database_name, self.pack_name, self.asset_name))
+        return hash((self.vault_name, self.pack_name, self.asset_name))
 
     @classmethod
     def from_string(cls, value: str) -> Optional['AssetModel']:
@@ -93,7 +93,7 @@ class AssetModel:
     def from_dict(cls, data: dict) -> 'AssetModel':
         """Create an AssetModel instance from a dictionary."""
         return cls(
-            database_name=data.get('databaseName'),
+            vault_name=data.get('vaultName'),
             pack_name=data.get('packName'),
             asset_name=data.get('assetName'),
             files=[AssetFile.from_dict(f) for f in data.get('files', [])],
@@ -105,8 +105,8 @@ class AssetModel:
         files = list(self.files)
         if self.active_type:
             files.append(AssetFile(asset_type=self.active_type))
-        if self.database_name:
-            result['databaseName'] = self.database_name
+        if self.vault_name:
+            result['vaultName'] = self.vault_name
         if self.pack_name:
             result['packName'] = self.pack_name
         if self.asset_name:
@@ -885,7 +885,7 @@ class JbSceneContainer(JbSceneObjects):
             f'Asset_{asset.pack_name}_{asset.asset_name}', parent=root_null
         )
         self._set_protection_tag(asset_null)
-        self._set_user_data(asset_null, 'databaseName', asset.database_name)
+        self._set_user_data(asset_null, 'vaultName', asset.vault_name)
         self._set_user_data(asset_null, 'packName', asset.pack_name)
         self._set_user_data(asset_null, 'assetName', asset.asset_name)
         if file:
@@ -895,14 +895,14 @@ class JbSceneContainer(JbSceneObjects):
         return (asset_null, asset_existed)
 
     def set_asset_data(self, container, asset, file=None) -> None:
-        self._set_user_data(container, 'databaseName', asset.database_name)
+        self._set_user_data(container, 'vaultName', asset.vault_name)
         self._set_user_data(container, 'packName', asset.pack_name)
         self._set_user_data(container, 'assetName', asset.asset_name)
         if file:
             self._set_user_data(container, 'assetType', file.asset_type)
 
     def get_asset_data_from_container(self, container) -> Optional[AssetModel]:
-        pack_name = asset_name = asset_type = database_name = None
+        pack_name = asset_name = asset_type = vault_name = None
         for key, bc in container.GetUserDataContainer() or []:
             bc_name = bc[c4d.DESC_NAME]
             if bc_name == 'packName':
@@ -911,15 +911,15 @@ class JbSceneContainer(JbSceneObjects):
                 asset_name = container[key]
             elif bc_name == 'assetType':
                 asset_type = container[key] or None
-            elif bc_name == 'databaseName':
-                database_name = container[key] or None
+            elif bc_name == 'vaultName':
+                vault_name = container[key] or None
         if not (pack_name and asset_name):
             return None
         return AssetModel(
             pack_name=pack_name,
             asset_name=asset_name,
             active_type=asset_type,
-            database_name=database_name,
+            vault_name=vault_name,
         )
 
     def copy_asset_data(self, src, dst) -> None:

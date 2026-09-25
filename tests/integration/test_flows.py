@@ -47,7 +47,7 @@ class BaseJikoBridgeTests(unittest.TestCase):
     ):
         asset_model, asset_file = self.scene.asset_classes()
         return asset_model(
-            database_name="test-local",
+            vault_name="test-local",
             pack_name="test",
             asset_name=f"test_{self._suffix}" if asset_name is None else asset_name,
             files=[asset_file(asset_type=asset_type, bridge_type=bridge_type)],

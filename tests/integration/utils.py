@@ -33,7 +33,7 @@ def make_injected_create_asset(asset_model: Any, original_create_asset: Callable
 
         asset = merged.get("asset")
         if asset is not None:
-            for key in ("database_name", "pack_name", "asset_name"):
+            for key in ("vault_name", "pack_name", "asset_name"):
                 value = getattr(asset_model, key, None)
                 if value is not None and hasattr(asset, key):
                     setattr(asset, key, value)

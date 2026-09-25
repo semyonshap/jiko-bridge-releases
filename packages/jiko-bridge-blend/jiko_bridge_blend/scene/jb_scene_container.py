@@ -85,24 +85,24 @@ class JbSceneContainer(JbSceneObjects):
         container["jb_pack_name"] = asset.pack_name or ""
         container["jb_asset_name"] = asset.asset_name or ""
         container["jb_asset_type"] = file.asset_type or "" if file else ""
-        container["jb_database_name"] = asset.database_name or ""
+        container["jb_vault_name"] = asset.vault_name or ""
 
     def get_asset_data_from_container(self, container) -> Optional[AssetModel]:
         pack_name = container.get("jb_pack_name", None)
         asset_name = container.get("jb_asset_name", None)
         asset_type = container.get("jb_asset_type", None)
-        database_name = container.get("jb_database_name", None)
+        vault_name = container.get("jb_vault_name", None)
         if not (pack_name and asset_name):
             return None
         return AssetModel(
             pack_name=pack_name,
             asset_name=asset_name,
             active_type=asset_type,
-            database_name=database_name,
+            vault_name=vault_name,
         )
 
     def copy_asset_data(self, src, dst) -> None:
-        for key in ("jb_pack_name", "jb_asset_name", "jb_asset_type", "jb_database_name"):
+        for key in ("jb_pack_name", "jb_asset_name", "jb_asset_type", "jb_vault_name"):
             if key in src:
                 dst[key] = src[key]
 

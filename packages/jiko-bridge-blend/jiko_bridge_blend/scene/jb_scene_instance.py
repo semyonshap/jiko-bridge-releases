@@ -19,7 +19,7 @@ class JbSceneInstance(JbSceneContainer):
         empty["jb_pack_name"] = container.get("jb_pack_name", "")
         empty["jb_asset_name"] = container.get("jb_asset_name", "")
         empty["jb_asset_type"] = container.get("jb_asset_type", "")
-        empty["jb_database_name"] = container.get("jb_database_name", "")
+        empty["jb_vault_name"] = container.get("jb_vault_name", "")
         scene = self.source.scene
         if scene is not None and scene.collection is not None:
             scene.collection.objects.link(empty)

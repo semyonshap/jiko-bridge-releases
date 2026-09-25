@@ -5,7 +5,6 @@ dev = [
   "fake-bpy-module-latest",
   "build",
   "twine",
-  "scriptmerge",
 ]
 
 [tool.mypy]

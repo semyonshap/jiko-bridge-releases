@@ -22,7 +22,6 @@ from .jb_utils import (
     busy_cursor,
     is_headless,
     load_arnold_module,
-    reload_plugin_modules,
 )
 
 __version__ = "1.0.0"
@@ -48,5 +47,4 @@ __all__ = [
     "is_headless",
     "load_arnold_module",
     "registerJikoBridge",
-    "reload_plugin_modules",
 ]

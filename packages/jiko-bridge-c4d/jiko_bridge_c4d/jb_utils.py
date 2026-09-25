@@ -5,13 +5,28 @@ Code by Semyon Shapoval, 2026
 
 import os
 import sys
-import importlib
-from pathlib import Path
 from contextlib import contextmanager
+from typing import Callable
 
 import c4d
 
-from jiko_bridge_client import JB_ENV
+_JB_RELOAD_HANDLER: Callable[[], bool] | None = None
+
+
+def set_reload_handler(handler: Callable[[], bool] | None) -> None:
+    """Connect the optional source-development reload controller."""
+    global _JB_RELOAD_HANDLER  # pylint: disable=global-statement
+    _JB_RELOAD_HANDLER = handler
+
+
+def is_development() -> bool:
+    """Whether the development entry point has attached a reload controller."""
+    return _JB_RELOAD_HANDLER is not None
+
+
+def reload_plugin_modules() -> bool:
+    """Reload sources in development; the release has no reload controller."""
+    return _JB_RELOAD_HANDLER() if _JB_RELOAD_HANDLER is not None else False
 
 
 def is_headless() -> bool:
@@ -31,31 +46,6 @@ def busy_cursor(status_text: str = ""):
     finally:
         c4d.gui.SetMousePointer(c4d.MOUSE_NORMAL)
         c4d.StatusClear()
-
-
-def reload_plugin_modules() -> None:
-    """Reload plugin modules to ensure the latest code is used."""
-    importlib.invalidate_caches()
-    plugin_dir = Path(os.path.abspath(os.path.dirname(__file__))).parent
-
-    plugin_modules = {}
-    for name, mod in list(sys.modules.items()):
-        mod_file = getattr(mod, "__file__", None)
-        if mod_file is not None and Path(mod_file).resolve().is_relative_to(plugin_dir.resolve()):
-            plugin_modules[name] = mod
-
-    module_names = sorted(plugin_modules, key=lambda name: name.count("."))
-    for name in reversed(module_names):
-        sys.modules.pop(name, None)
-
-    for name in module_names:
-        try:
-            importlib.import_module(name)
-        except (ImportError, ModuleNotFoundError, RuntimeError, SyntaxError) as e:
-            print(f"Failed to import {name!r}: {e}")
-
-    if JB_ENV != "production":
-        print(f"{len(plugin_modules)} modules reloaded.")
 
 
 def load_arnold_module():

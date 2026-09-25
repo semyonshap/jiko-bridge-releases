@@ -1,13 +1,10 @@
-"""
-Commands for JB Asset Importer/Exporter plugin in Cinema 4D.
-Code by Semyon Shapoval, 2026
-"""
+import traceback
 
 import c4d
+from jiko_bridge_c4d.jb_utils import is_development, reload_plugin_modules
 from jiko_bridge_c4d.jb_types import JbSource
 from jiko_bridge_c4d.jb_asset_importer import JbAssetImporter
 from jiko_bridge_c4d.jb_asset_exporter import JbAssetExporter
-from jiko_bridge_c4d.jb_utils import reload_plugin_modules
 from jiko_bridge_c4d.jb_settings import JbSettingsDialog
 from jiko_bridge_c4d.scene.jb_scene import JbScene
 
@@ -63,8 +60,19 @@ class JbCommandsPopup:
 
     def reload_modules(self):
         """Reload plugin modules."""
-        reload_plugin_modules()
-        c4d.EventAdd()
+        if not is_development():
+            return
+        # Settings are modal; no settings window is active while this menu runs.
+        self._settings_dialog = None
+        try:
+            reload_plugin_modules()
+        except Exception:
+            traceback.print_exc()
+            c4d.gui.MessageDialog(
+                "Jiko Bridge: reload failed. Previous modules restored. See Python Console."
+            )
+        finally:
+            c4d.EventAdd()
 
     def open_settings(self):
         """Открыть диалог настроек."""
@@ -81,7 +89,8 @@ class JbCommandsPopup:
         bc.InsData(IDC_POPUP_ACTION_EXPORT, f"Export&i{c4d.ID_GLOBALMACHINELIST}&")
         bc.InsData(IDC_POPUP_ACTION_SOLO, f"Solo&i{c4d.RESOURCEIMAGE_EYEACTIVE}&")
         bc.InsData(0, "")
-        bc.InsData(IDC_POPUP_ACTION_RELOAD, f"Reload&i{c4d.ID_MODELING_ROTATE}&")
+        if is_development():
+            bc.InsData(IDC_POPUP_ACTION_RELOAD, f"Reload&i{c4d.ID_MODELING_ROTATE}&")
         bc.InsData(IDC_POPUP_ACTION_SETTINGS, f"Settings&i{c4d.RESOURCEIMAGE_PIN}&")
 
         res = c4d.gui.ShowPopupDialog(cd=None, bc=bc, x=c4d.MOUSEPOS, y=c4d.MOUSEPOS)

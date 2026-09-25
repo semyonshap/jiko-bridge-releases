@@ -4,7 +4,7 @@ PKG_PATHS := $(patsubst %/pyproject.toml,%,$(wildcard packages/*/pyproject.toml)
 
 PKG_PACKAGE_TARGETS := $(foreach mk,$(wildcard packages/*/package.mk),package-$(notdir $(dir $(mk))))
 
-.PHONY: pkg pkg-lint pkg-typecheck pkg-install pkg-build pkg-package $(PKG_PACKAGE_TARGETS)
+.PHONY: pkg pkg-lint pkg-typecheck pkg-install pkg-build pkg-package pkg-package-c4d $(PKG_PACKAGE_TARGETS)
 
 pkg: ## Lint and typecheck every package in packages/
 	make pkg-lint
@@ -35,4 +35,7 @@ pkg-build: $(PKG_BUILD_TARGETS) ## Build sdist + wheel for every package
 
 # Упаковка конкретных пакетов подключается из packages/*/package.mk, поэтому
 # здесь остаётся только общий шаг: собрать артефакты всех пакетов.
-pkg-package: pkg-build $(PKG_PACKAGE_TARGETS) ## Build distributable artifacts for every package
+pkg-package-c4d: ## Bundle the Cinema 4D plugin into dist/cinema4d/jiko_bridge_c4d.pyp
+	$(PYTHON) packages/jiko-bundler/bundle.py plugins/cinema4d/jiko_bridge_c4d.pyp -I packages/jiko-bridge-c4d -I packages/jiko-bridge-client --external c4d --external maxon -o dist/cinema4d/jiko_bridge_c4d.pyp
+
+pkg-package: pkg-build pkg-package-c4d $(PKG_PACKAGE_TARGETS) ## Build distributable artifacts for every package

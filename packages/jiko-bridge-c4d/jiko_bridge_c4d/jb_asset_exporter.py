@@ -10,7 +10,7 @@ from jiko_bridge_c4d.jb_types import JbAssetExporterBase, JbSource
 from jiko_bridge_c4d.scene.jb_scene import JbScene
 from jiko_bridge_client import AssetFile, AssetModel, JbAPI, get_logger
 
-logger = get_logger(__name__)
+asset_export_logger = get_logger(__name__)
 
 
 class JbAssetExporter(JbAssetExporterBase):
@@ -53,17 +53,17 @@ class JbAssetExporter(JbAssetExporterBase):
     def _update_asset(self, container) -> None:
         asset_model = self.scene.get_asset_data_from_container(container)
         if not asset_model:
-            logger.error("Invalid asset information")
+            asset_export_logger.error("Invalid asset information")
             return
 
         asset = self.api.get_asset(asset_model)
         if not asset or not asset.files or not asset.pack_name or not asset.asset_name:
-            logger.error("Failed to fetch asset '%s'.", asset_model.asset_name)
+            asset_export_logger.error("Failed to fetch asset '%s'.", asset_model.asset_name)
             return
 
         file = next(iter(asset.files))
         if not file.filepath:
-            logger.error(
+            asset_export_logger.error(
                 "Filepath missing for asset '%s'. Cannot export.",
                 asset_model.asset_name,
             )
@@ -71,7 +71,7 @@ class JbAssetExporter(JbAssetExporterBase):
 
         ext = Path(file.filepath.lower()).suffix.lstrip('.')
         if not ext:
-            logger.error(
+            asset_export_logger.error(
                 "Unable to determine export extension from filepath '%s' for '%s'.",
                 file.filepath,
                 asset_model.asset_name,
@@ -80,7 +80,7 @@ class JbAssetExporter(JbAssetExporterBase):
 
         objects = self.scene.get_children(container)
         if not objects:
-            logger.error(
+            asset_export_logger.error(
                 "No objects found in container for asset '%s'. Cannot export.",
                 asset_model.asset_name,
             )
@@ -101,19 +101,19 @@ class JbAssetExporter(JbAssetExporterBase):
 
         filepath = self.scene.export_with_temp(objects, fmt)
         if not filepath:
-            logger.error("Export failed.")
+            asset_export_logger.error("Export failed.")
             return
 
         asset = self.api.create_asset(AssetModel(files=[AssetFile(filepath=filepath)]))
 
         if not asset or not asset.files:
-            logger.error("No asset found for filepath '%s'", filepath)
+            asset_export_logger.error("No asset found for filepath '%s'", filepath)
             return
 
         for file in asset.files:
             container, _ = self.scene.get_or_create_asset_container(asset, file)
             self.scene.move_objects_to_container(objects, container)
-            logger.info("Asset '%s' created with type '%s'.", asset.asset_name, file.asset_type)
+            asset_export_logger.info("Asset '%s' created with type '%s'.", asset.asset_name, file.asset_type)
 
     def _export_project(self) -> None:
         if filepath := self.scene.get_project_filepath():

@@ -10,7 +10,7 @@ import c4d
 import maxon
 from jiko_bridge_client import get_logger
 
-logger = get_logger(__name__)
+node_material_logger = get_logger(__name__)
 
 ASSET_ID_ATTR = "net.maxon.node.attribute.assetid"
 NODE_NAME_ID = "net.maxon.node.base.name"
@@ -209,12 +209,12 @@ class JbBaseNodeMaterial:
         """Apply a texture channel to the material."""
         nodespace = self.nodespace_id()
         if nodespace is None:
-            logger.error("Node space ID is not defined for this material type.")
+            node_material_logger.error("Node space ID is not defined for this material type.")
             return
 
         self._graph = self.ensure_graph(material, nodespace)
         if self._graph is None:
-            logger.error("Material does not have the expected node space.")
+            node_material_logger.error("Material does not have the expected node space.")
             return
 
         with self._graph.BeginTransaction() as t:

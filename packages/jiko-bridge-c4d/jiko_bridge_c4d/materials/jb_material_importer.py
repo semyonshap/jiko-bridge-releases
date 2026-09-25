@@ -18,7 +18,7 @@ ARNOLD_ID = 1029988
 REDSHIFT_ID = c4d.VPrsrenderer
 VIEWPORT_ID = 300001061
 
-logger = get_logger(__name__)
+material_import_logger = get_logger(__name__)
 
 
 class JbMaterialImporter(JbMaterialImporterBase):
@@ -64,7 +64,7 @@ class JbMaterialImporter(JbMaterialImporterBase):
     def import_material(self, asset: AssetModel, file: AssetFile) -> Optional[c4d.BaseMaterial]:
         """Import a single material file into the scene."""
         if file.asset_type is None or file.filepath is None:
-            logger.error("Material file is missing type or path")
+            material_import_logger.error("Material file is missing type or path")
             return None
 
         renderer = self._get_material_renderer()

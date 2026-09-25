@@ -36,10 +36,12 @@ follow_imports = "skip"
 line-length = 100
 target-version = ["py310"]
 skip-string-normalization = true
+include = '\.pyi?$|\.pyp$'
 
 [tool.isort]
 profile = "black"
 line_length = 100
+supported_extensions = ["py", "pyi", "pyx", "pyp"]
 
 [tool.pylint.MASTER]
 extension-pkg-whitelist = ["c4d", "maxon"]

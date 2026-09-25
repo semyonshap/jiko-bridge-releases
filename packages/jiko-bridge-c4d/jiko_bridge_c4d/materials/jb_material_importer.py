@@ -1,7 +1,6 @@
 from typing import Optional
 
 import c4d
-
 from jiko_bridge_c4d.jb_types import JbMaterialImporterBase, JbSource
 from jiko_bridge_c4d.materials import (
     JbArnoldNodeMaterial,

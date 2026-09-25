@@ -2,7 +2,6 @@ from typing import TypeAlias
 
 import bpy
 import mathutils
-
 from jiko_bridge_client import (
     JbAssetExporterABC,
     JbAssetImporterABC,

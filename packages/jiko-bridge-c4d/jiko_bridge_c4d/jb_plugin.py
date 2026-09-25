@@ -1,5 +1,4 @@
 import c4d
-
 from jiko_bridge_c4d.jb_commands import JbCommandsPopup
 
 JIKO_BRIDGE_ID = 1096086

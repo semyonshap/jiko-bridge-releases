@@ -1,13 +1,12 @@
 from typing import Optional
 
 import bpy
-
 from jiko_bridge_client import AssetFile, AssetModel, get_logger
 
 from ..jb_types import JbMaterialImporterBase
 from .jb_standard_material import JBStandardMaterial
 
-logger = get_logger(__name__)
+material_import_logger = get_logger(__name__)
 
 
 class JbMaterialImporter(JbMaterialImporterBase):
@@ -26,7 +25,7 @@ class JbMaterialImporter(JbMaterialImporterBase):
     def import_material(self, asset: AssetModel, file: AssetFile) -> Optional[bpy.types.Material]:
         """Import a single material file into the scene."""
         if file.asset_type is None or file.filepath is None:
-            logger.error("Material file is missing type or path")
+            material_import_logger.error("Material file is missing type or path")
             return None
 
         channel = file.asset_type.lower()
@@ -38,7 +37,7 @@ class JbMaterialImporter(JbMaterialImporterBase):
             material = bpy.data.materials.new(name=material_name)
 
         if material is None:
-            logger.error("Failed to create material: %s", material_name)
+            material_import_logger.error("Failed to create material: %s", material_name)
             return None
 
         standard = JBStandardMaterial(material)

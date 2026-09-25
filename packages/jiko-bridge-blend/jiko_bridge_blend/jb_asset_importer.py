@@ -4,7 +4,7 @@ from .jb_types import JbAssetImporterBase, JbContainer, JbMaterial, JbSource
 from .materials.jb_material_importer import JbMaterialImporter
 from .scene.jb_scene import JbScene
 
-logger = get_logger(__name__)
+asset_import_logger = get_logger(__name__)
 
 
 class JbAssetImporter(JbAssetImporterBase):
@@ -94,7 +94,7 @@ class JbAssetImporter(JbAssetImporterBase):
                     if mat:
                         self.scene.merge_duplicates_materials(mat)
                 case _:
-                    logger.warning("Unsupported bridge type: %s", file.bridge_type)
+                    asset_import_logger.warning("Unsupported bridge type: %s", file.bridge_type)
 
     def _create_model(self, asset, file):
         container, exists = self.scene.get_or_create_asset_container(asset, file)

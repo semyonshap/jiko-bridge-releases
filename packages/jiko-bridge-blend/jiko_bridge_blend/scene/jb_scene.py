@@ -2,7 +2,6 @@ from logging import Logger
 from typing import Optional
 
 import bpy
-
 from jiko_bridge_client import get_logger
 
 from ..jb_settings import JbSettings

@@ -34,4 +34,4 @@ pkg-package-blend: ## Bundle the Blender addon into plugins/blender/addons/jiko_
 		--external addon_utils \
 		-o plugins/blender/addons/jiko_bridge_blend/__init__.py
 
-pkg-package: pkg-package-c4d pkg-package-blend $(PKG_PACKAGE_TARGETS) ## Bundle distributable artifacts for every plugin
+pkg-bundle: pkg-package-c4d pkg-package-blend $(PKG_PACKAGE_TARGETS) ## Bundle distributable artifacts for every plugin

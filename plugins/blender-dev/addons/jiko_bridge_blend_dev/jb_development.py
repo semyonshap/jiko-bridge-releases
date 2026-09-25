@@ -18,8 +18,7 @@ _STABLE_MODULES = (__name__,)
 def _owned(module_name: str) -> bool:
     """Whether a module belongs to the reloadable Jiko Bridge sources."""
     return any(
-        module_name == prefix or module_name.startswith(prefix + ".")
-        for prefix in _OWNED_PREFIXES
+        module_name == prefix or module_name.startswith(prefix + ".") for prefix in _OWNED_PREFIXES
     )
 
 

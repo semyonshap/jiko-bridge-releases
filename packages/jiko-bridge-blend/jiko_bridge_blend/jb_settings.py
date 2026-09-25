@@ -2,7 +2,6 @@ import bpy
 
 from .jb_types import JbSettingsBase
 
-ADDON_ID = __package__.split('.', maxsplit=1)[0]
 _SOLO_STACK_SIZE = 5
 
 
@@ -98,7 +97,7 @@ class JbSettings(JbSettingsBase):
         return previous
 
 
-classes = (
+settings_classes = (
     JB_PG_SoloEntry,
     JB_PG_SceneSettings,
 )
@@ -106,7 +105,7 @@ classes = (
 
 def register_settings() -> None:
     """Register Settings"""
-    for cls in classes:
+    for cls in settings_classes:
         bpy.utils.register_class(cls)
     setattr(bpy.types.Scene, "jb_settings", bpy.props.PointerProperty(type=JB_PG_SceneSettings))
 
@@ -115,5 +114,5 @@ def unregister_settings() -> None:
     """Unregister settings"""
     if hasattr(bpy.types.Scene, "jb_settings"):
         delattr(bpy.types.Scene, "jb_settings")
-    for cls in reversed(classes):
+    for cls in reversed(settings_classes):
         bpy.utils.unregister_class(cls)  # type: ignore[arg-type]

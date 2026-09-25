@@ -1,10 +1,9 @@
 import bpy
-
 from jiko_bridge_client import get_logger
 
 from .jb_base_node_material import JBBaseNodeMaterial
 
-logger = get_logger(__name__)
+standard_material_logger = get_logger(__name__)
 
 NODE_OUTPUT = "ShaderNodeOutputMaterial"
 NODE_OUTPUT_NAME = "Material Output"
@@ -58,7 +57,7 @@ class JBStandardMaterial(JBBaseNodeMaterial):
                 img.colorspace_settings.name = "Non-Color"
             node.image = img
         except RuntimeError as e:
-            logger.warning("Failed to load texture '%s': %s", path, e)
+            standard_material_logger.warning("Failed to load texture '%s': %s", path, e)
         return node
 
     def _wire_basecolor(self, path: str) -> None:

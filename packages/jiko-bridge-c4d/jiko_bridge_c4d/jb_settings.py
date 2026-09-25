@@ -1,5 +1,4 @@
 import c4d
-
 from jiko_bridge_c4d.jb_types import JbSettingsBase
 
 IDC_SETTINGS_COMBO = 3001

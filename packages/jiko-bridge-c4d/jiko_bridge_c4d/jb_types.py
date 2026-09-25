@@ -1,7 +1,6 @@
 from typing import TypeAlias
 
 import c4d
-
 from jiko_bridge_client import (
     JbAssetExporterABC,
     JbAssetImporterABC,

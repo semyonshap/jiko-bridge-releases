@@ -1,7 +1,7 @@
 import importlib
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 if __name__ == "__main__":
     dev_root = Path(__file__).resolve().parent

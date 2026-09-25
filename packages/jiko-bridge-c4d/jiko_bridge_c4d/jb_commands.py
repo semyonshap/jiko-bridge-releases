@@ -1,5 +1,4 @@
 import c4d
-
 from jiko_bridge_c4d.jb_asset_exporter import JbAssetExporter
 from jiko_bridge_c4d.jb_asset_importer import JbAssetImporter
 from jiko_bridge_c4d.jb_settings import JbSettingsDialog

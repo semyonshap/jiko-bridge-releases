@@ -59,7 +59,7 @@ class JB_OT_Solo(bpy.types.Operator):  # pylint: disable=invalid-name
         return {"FINISHED"}
 
 
-classes = [
+operator_classes = [
     JB_PT_Commands,
     JB_OT_Solo,
     JB_OT_AssetExport,
@@ -70,7 +70,7 @@ classes = [
 
 def register():
     """Register addon classes."""
-    for cls in classes:
+    for cls in operator_classes:
         bpy.utils.register_class(cls)
 
     register_keymap()
@@ -79,7 +79,7 @@ def register():
 
 def unregister():
     """Unregister addon classes."""
-    for cls in reversed(classes):
+    for cls in reversed(operator_classes):
         bpy.utils.unregister_class(cls)
 
     unregister_keymap()

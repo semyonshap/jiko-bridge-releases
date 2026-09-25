@@ -1,7 +1,6 @@
 from typing import Optional
 
 import bpy
-
 from jiko_bridge_client import AssetModel
 
 from ..jb_types import JbContainer

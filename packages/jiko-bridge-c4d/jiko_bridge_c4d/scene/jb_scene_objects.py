@@ -1,7 +1,6 @@
 import re
 
 import c4d
-
 from jiko_bridge_c4d.jb_types import JbData, JbMaterial, JbObject, JbSceneBase
 
 

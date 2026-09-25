@@ -1,11 +1,11 @@
 [dependency-groups]
 dev = [
-  "stickytape",
   "mypy",
   "pylint",
   "fake-bpy-module-latest",
   "build",
   "twine",
+  "scriptmerge",
 ]
 
 [tool.mypy]
@@ -28,7 +28,7 @@ skip-string-normalization = true
 
 [tool.isort]
 profile = "black"
-known_first_party = ["src"]
+known_first_party = ["src", "jiko_bridge_c4d", "jiko_bridge_client"]
 line_length = 100
 
 [tool.pylint.MASTER]

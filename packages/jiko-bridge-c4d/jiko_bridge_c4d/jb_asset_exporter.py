@@ -5,17 +5,15 @@ Code by Semyon Shapoval, 2026
 
 from pathlib import Path
 
-from src.jb_api import JbAPI
-from src.jb_types import JbSource, AssetModel, AssetFile
-from src.scene.jb_scene import JbScene
-from src.jb_utils import get_logger
-from src.jb_protocols import JbAssetExporterProtocol
-from src.jb_settings import JbSettings
+from jiko_bridge_c4d.jb_settings import JbSettings
+from jiko_bridge_c4d.jb_types import JbAssetExporterBase, JbSource
+from jiko_bridge_c4d.scene.jb_scene import JbScene
+from jiko_bridge_client import AssetFile, AssetModel, JbAPI, get_logger
 
 logger = get_logger(__name__)
 
 
-class JbAssetExporter(JbAssetExporterProtocol):
+class JbAssetExporter(JbAssetExporterBase):
     """Export asset class"""
 
     def __init__(self, source: JbSource):

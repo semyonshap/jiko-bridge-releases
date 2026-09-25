@@ -6,14 +6,13 @@ Code by Semyon Shapoval, 2026
 from typing import Optional
 
 import c4d
-from src.jb_types import AssetModel, AssetFile, JbSource
-from src.materials import (
+from jiko_bridge_c4d.jb_types import JbMaterialImporterBase, JbSource
+from jiko_bridge_c4d.materials import (
     JbRedshiftNodeMaterial,
     JbArnoldNodeMaterial,
     JbStandardNodeMaterial,
 )
-from src.jb_protocols import JbMaterialImporterABC
-from src.jb_utils import get_logger
+from jiko_bridge_client import AssetFile, AssetModel, get_logger
 
 ARNOLD_ID = 1029988
 REDSHIFT_ID = c4d.VPrsrenderer
@@ -22,7 +21,7 @@ VIEWPORT_ID = 300001061
 logger = get_logger(__name__)
 
 
-class JbMaterialImporter(JbMaterialImporterABC):
+class JbMaterialImporter(JbMaterialImporterBase):
     """Material importer that handles different renderers."""
 
     def __init__(self, source: JbSource):

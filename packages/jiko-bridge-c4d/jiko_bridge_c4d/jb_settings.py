@@ -4,7 +4,7 @@ Code by Semyon Shapoval, 2026
 """
 
 import c4d
-from src.jb_protocols import JbSettingsABC
+from jiko_bridge_c4d.jb_types import JbSettingsBase
 
 IDC_SETTINGS_COMBO = 3001
 IDC_SETTINGS_OK = 3002
@@ -16,7 +16,7 @@ COMBO_OPTIONS_EXPORT_FORMAT = [
 ]
 
 
-class JbSettings(JbSettingsABC):
+class JbSettings(JbSettingsBase):
     """Manages plugin settings stored inside the C4D document."""
 
     _SETTINGS_ID = 1096087

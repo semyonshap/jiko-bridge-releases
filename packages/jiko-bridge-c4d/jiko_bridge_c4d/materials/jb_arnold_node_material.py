@@ -5,7 +5,7 @@ Code by Semyon Shapoval, 2026
 
 from __future__ import annotations
 
-from src.materials.jb_base_node_material import JbBaseNodeMaterial
+from jiko_bridge_c4d.materials.jb_base_node_material import JbBaseNodeMaterial
 
 ARNOLD_NODESPACE = "com.autodesk.arnold.nodespace"
 ARNOLD_END = "com.autodesk.arnold.material"

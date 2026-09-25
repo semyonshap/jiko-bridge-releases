@@ -4,7 +4,7 @@ Code by Semyon Shapoval, 2026
 """
 
 from __future__ import annotations
-from src.materials.jb_base_node_material import JbBaseNodeMaterial
+from jiko_bridge_c4d.materials.jb_base_node_material import JbBaseNodeMaterial
 
 RS_ID = "com.redshift3d.redshift4c4d"
 RS_NODESPACE = f"{RS_ID}.class.nodespace"

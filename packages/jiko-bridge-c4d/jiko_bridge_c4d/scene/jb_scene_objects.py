@@ -7,11 +7,10 @@ import re
 
 import c4d
 
-from src.jb_protocols import JbSceneABC
-from src.jb_types import JbData, JbObject, JbMaterial
+from jiko_bridge_c4d.jb_types import JbData, JbObject, JbMaterial, JbSceneBase
 
 
-class JbSceneObjects(JbSceneABC):
+class JbSceneObjects(JbSceneBase):
     """Traversal and querying of Cinema 4D object hierarchies."""
 
     def get_selection(self) -> list[JbObject | JbMaterial]:

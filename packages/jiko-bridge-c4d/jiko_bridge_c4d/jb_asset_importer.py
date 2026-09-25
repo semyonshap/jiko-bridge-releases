@@ -3,17 +3,20 @@ Importer from Jiko Bridge
 Code by Semyon Shapoval, 2026
 """
 
-from src.jb_api import JbAPI
-from src.scene.jb_scene import JbScene
-from src.materials.jb_material_importer import JbMaterialImporter
-from src.jb_types import AssetModel, JbSource, JbContainer, JbMaterial
-from src.jb_utils import get_logger
-from src.jb_protocols import JbAssetImporterProtocol
+from jiko_bridge_c4d.jb_types import (
+    JbAssetImporterBase,
+    JbContainer,
+    JbMaterial,
+    JbSource,
+)
+from jiko_bridge_c4d.materials.jb_material_importer import JbMaterialImporter
+from jiko_bridge_c4d.scene.jb_scene import JbScene
+from jiko_bridge_client import AssetModel, JbAPI, get_logger
 
 logger = get_logger(__name__)
 
 
-class JbAssetImporter(JbAssetImporterProtocol):
+class JbAssetImporter(JbAssetImporterBase):
     """Handles importing assets from Jiko Bridge into scene."""
 
     def __init__(self, source: JbSource):
@@ -58,6 +61,8 @@ class JbAssetImporter(JbAssetImporterProtocol):
         if materials:
             for mat in materials:
                 mat_name = self.materials.get_material_name(mat)
+                if not mat_name:
+                    continue
                 asset_model = AssetModel.from_string(mat_name)
                 if asset_model:
                     asset = self.api.get_asset(asset_model)

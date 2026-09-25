@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 name = "jiko-bridge-client"
 dynamic = ["version"]
 description = "Shared models, HTTP API client and integration contracts for Jiko Bridge DCC plugins."
-readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Semyon Shapoval" }]
@@ -47,8 +46,4 @@ path = "jiko_bridge_client/__init__.py"
 packages = ["jiko_bridge_client"]
 
 [tool.hatch.build.targets.sdist]
-include = [
-    "/jiko_bridge_client",
-    "/README.md",
-    "/LICENSE",
-]
+include = ["/jiko_bridge_client"]

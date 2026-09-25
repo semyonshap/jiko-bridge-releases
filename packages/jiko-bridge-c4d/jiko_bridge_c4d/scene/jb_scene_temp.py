@@ -6,7 +6,7 @@ Code by Semyon Shapoval, 2026
 from contextlib import contextmanager
 
 import c4d
-from src.scene.jb_scene_instance import JbSceneInstance
+from jiko_bridge_c4d.scene.jb_scene_instance import JbSceneInstance
 
 
 class JbSceneTemp(JbSceneInstance):

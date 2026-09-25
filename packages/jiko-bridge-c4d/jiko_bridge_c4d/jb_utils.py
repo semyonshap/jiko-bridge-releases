@@ -5,39 +5,13 @@ Code by Semyon Shapoval, 2026
 
 import os
 import sys
-import logging
 import importlib
 from pathlib import Path
 from contextlib import contextmanager
 
 import c4d
 
-JB_ENV = os.getenv("JB_ENV", "production")
-
-
-def get_logger(name: str) -> logging.Logger:
-    """Get a logger."""
-    logger = logging.getLogger(name)
-
-    if logger.handlers:
-        return logger
-
-    if JB_ENV == "production":
-        logger.setLevel(logging.INFO)
-    else:
-        logger.setLevel(logging.DEBUG)
-
-    formatter = logging.Formatter(
-        "[Jiko Bridge] %(levelname)s [%(name)s] %(message)s", datefmt="%H:%M:%S"
-    )
-
-    console = logging.StreamHandler()
-    console.setLevel(logging.DEBUG)
-    console.setFormatter(formatter)
-    logger.addHandler(console)
-    logger.propagate = False
-
-    return logger
+from jiko_bridge_client import JB_ENV
 
 
 def is_headless() -> bool:

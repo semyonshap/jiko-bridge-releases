@@ -5,7 +5,7 @@ Code by Semyon Shapoval, 2026
 
 from __future__ import annotations
 
-from src.materials.jb_base_node_material import JbBaseNodeMaterial
+from jiko_bridge_c4d.materials.jb_base_node_material import JbBaseNodeMaterial
 
 C4D_NODESPACE = "net.maxon.nodespace.standard"
 C4D_BSDF = "net.maxon.render.node.bsdf"

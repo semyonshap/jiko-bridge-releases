@@ -24,11 +24,12 @@ class Scene(BaseScene):
         return self._source
 
     def import_module(self, module_name: str):
-        return importlib.import_module(module_name)
+        """Resolve a logical module name inside the plugin package."""
+        return importlib.import_module(f"jiko_bridge_c4d.{module_name}")
 
     def call_command(self, operator: str):
         try:
-            ops = importlib.import_module("src.jb_commands")
+            ops = self.import_module("jb_commands")
         except ImportError as e:
             raise RuntimeError("jiko_bridge operator should be registered") from e
         commands = getattr(ops, "JbCommands")(self.source)
@@ -175,7 +176,7 @@ class Scene(BaseScene):
         c4d.EventAdd()
 
     def set_export_format(self, fmt: str) -> None:
-        jb_settings = importlib.import_module("src.jb_settings")
+        jb_settings = self.import_module("jb_settings")
         combo_options_export_format = jb_settings.COMBO_OPTIONS_EXPORT_FORMAT
         jb_settings_mod = jb_settings.JbSettings
 

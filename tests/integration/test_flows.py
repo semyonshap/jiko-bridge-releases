@@ -99,7 +99,7 @@ class BaseJikoBridgeTests(unittest.TestCase):
 
     def export_flow(self, asset_model: Any) -> Any:
         """Export new asset."""
-        api_module = self.scene.import_module("src.jb_api")
+        api_module = self.scene.import_module("jb_api")
         self.assertIsNotNone(api_module)
 
         original_create_asset = api_module.JbAPI.create_asset
@@ -121,7 +121,7 @@ class BaseJikoBridgeTests(unittest.TestCase):
         """Update existing asset."""
         self.scene.select_objects([container])
 
-        exporter_module = self.scene.import_module("src.jb_asset_exporter")
+        exporter_module = self.scene.import_module("jb_asset_exporter")
         exporter = exporter_module.JbAssetExporter(self.scene.source)
         export_message = exporter.export_message()
         self.assertIn("update", export_message.lower())
@@ -134,7 +134,7 @@ class BaseJikoBridgeTests(unittest.TestCase):
 
         self.check_import_message("active asset")
 
-        api_module = self.scene.import_module("src.jb_api")
+        api_module = self.scene.import_module("jb_api")
 
         def injected_active_asset(*_args: Any, **_kwargs: Any) -> Any:
             return api_module.JbAPI().get_asset(asset_model)
@@ -165,14 +165,14 @@ class BaseJikoBridgeTests(unittest.TestCase):
 
     def get_asset(self, asset: AssetModel) -> AssetModel:
         """Get asset from api."""
-        api_module = self.scene.import_module("src.jb_api")
+        api_module = self.scene.import_module("jb_api")
         asset = api_module.JbAPI().get_asset(asset)
         self.assertIsNotNone(asset, "Asset should be found")
         return asset
 
     def check_import_message(self, value: str) -> str:
         """Get import message."""
-        importer_module = self.scene.import_module("src.jb_asset_importer")
+        importer_module = self.scene.import_module("jb_asset_importer")
         importer = importer_module.JbAssetImporter(self.scene.source)
         msg = importer.import_message()
 

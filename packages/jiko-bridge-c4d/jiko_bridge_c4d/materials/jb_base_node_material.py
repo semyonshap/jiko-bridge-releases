@@ -8,7 +8,7 @@ from typing import Optional
 
 import c4d
 import maxon
-from src.jb_utils import get_logger
+from jiko_bridge_client import get_logger
 
 logger = get_logger(__name__)
 

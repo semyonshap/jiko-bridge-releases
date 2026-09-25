@@ -25,7 +25,7 @@ class Scene(BaseScene):
         return self._source
 
     def import_module(self, module_name: str):
-        full_name = f"{self.ADDON_NAME}.{module_name}"
+        full_name = f"{self.ADDON_NAME}.src.{module_name}"
         return importlib.import_module(full_name)
 
     def call_command(self, operator: str):

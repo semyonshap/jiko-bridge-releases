@@ -8,10 +8,10 @@ from typing import Optional
 from logging import Logger
 
 import c4d
-from src.jb_settings import JbSettings
-from src.jb_types import JbSource
-from src.scene.jb_scene_file import JbSceneFile
-from src.jb_utils import get_logger
+from jiko_bridge_c4d.jb_settings import JbSettings
+from jiko_bridge_c4d.jb_types import JbSource
+from jiko_bridge_c4d.scene.jb_scene_file import JbSceneFile
+from jiko_bridge_client import get_logger
 
 
 class JbScene(JbSceneFile):

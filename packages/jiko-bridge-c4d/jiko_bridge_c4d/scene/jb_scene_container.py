@@ -7,8 +7,9 @@ from typing import Optional
 
 import c4d
 
-from src.jb_types import AssetModel, JbContainer
-from src.scene.jb_scene_objects import JbSceneObjects
+from jiko_bridge_c4d.jb_types import JbContainer
+from jiko_bridge_c4d.scene.jb_scene_objects import JbSceneObjects
+from jiko_bridge_client import AssetModel
 
 
 class JbSceneContainer(JbSceneObjects):

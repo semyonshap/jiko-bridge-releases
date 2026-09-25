@@ -4,12 +4,12 @@ Code by Semyon Shapoval, 2026
 """
 
 import c4d
-from src.jb_types import JbSource
-from src.jb_asset_importer import JbAssetImporter
-from src.jb_asset_exporter import JbAssetExporter
-from src.jb_utils import reload_plugin_modules
-from src.jb_settings import JbSettingsDialog
-from src.scene.jb_scene import JbScene
+from jiko_bridge_c4d.jb_types import JbSource
+from jiko_bridge_c4d.jb_asset_importer import JbAssetImporter
+from jiko_bridge_c4d.jb_asset_exporter import JbAssetExporter
+from jiko_bridge_c4d.jb_utils import reload_plugin_modules
+from jiko_bridge_c4d.jb_settings import JbSettingsDialog
+from jiko_bridge_c4d.scene.jb_scene import JbScene
 
 IDC_POPUP_ACTION_IMPORT = 2001
 IDC_POPUP_ACTION_EXPORT = 2002

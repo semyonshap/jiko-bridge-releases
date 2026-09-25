@@ -1,6 +1,5 @@
 from jiko_bridge_blend.jb_plugin import register, unregister
 
-# Blender reads bl_info and calls both entry points on the addon module.
 __all__ = ["bl_info", "register", "unregister"]
 
 bl_info = {

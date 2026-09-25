@@ -1,8 +1,3 @@
-"""
-Api helper
-Code by Semyon Shapoval, 2026
-"""
-
 import time
 import logging
 import http.client

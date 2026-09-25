@@ -1,8 +1,3 @@
-"""
-Blender scene helper utilities for integration tests.
-Code by Semyon Shapoval, 2026
-"""
-
 import os
 import importlib
 from typing import Optional
@@ -24,9 +19,9 @@ class Scene(BaseScene):
     def source(self) -> bpy.types.Context:
         return self._source
 
-    def import_module(self, module_name: str):
-        full_name = f"{self.ADDON_NAME}.src.{module_name}"
-        return importlib.import_module(full_name)
+    def import_plugin(self):
+        """Return the enabled add-on bundle."""
+        return importlib.import_module(self.ADDON_NAME)
 
     def call_command(self, operator: str):
         jiko_ops = getattr(bpy.ops, "jiko_bridge", None)

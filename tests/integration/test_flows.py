@@ -1,14 +1,11 @@
-"""
-Base integration test flows for Jiko Bridge.
-Code by Semyon Shapoval, 2026
-"""
+from __future__ import annotations
 
 import os
 import sys
 import uuid
 import unittest
 import importlib.util
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from unittest.mock import patch
 
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -26,16 +23,8 @@ elif importlib.util.find_spec("bpy") is not None:
 else:
     raise ImportError("Environment not supported.")
 
-
-if importlib.util.find_spec("c4d") is not None:
-    from plugins.cinema4d.src.jb_types import AssetModel, AssetFile
-elif importlib.util.find_spec("bpy") is not None:
-    from plugins.blender.addons.jiko_bridge_blend.src.jb_types import (  # type: ignore[assignment]
-        AssetModel,
-        AssetFile,
-    )
-else:
-    raise ImportError("Environment not supported.")
+if TYPE_CHECKING:
+    from jiko_bridge_client.models import AssetModel
 
 log = get_logger(__name__)
 
@@ -56,11 +45,12 @@ class BaseJikoBridgeTests(unittest.TestCase):
         asset_type="model",
         bridge_type="model",
     ):
-        return AssetModel(
+        asset_model, asset_file = self.scene.asset_classes()
+        return asset_model(
             database_name="test-local",
             pack_name="test",
             asset_name=f"test_{self._suffix}" if asset_name is None else asset_name,
-            files=[AssetFile(asset_type=asset_type, bridge_type=bridge_type)],
+            files=[asset_file(asset_type=asset_type, bridge_type=bridge_type)],
         )
 
     def setUp(self) -> None:
@@ -99,7 +89,7 @@ class BaseJikoBridgeTests(unittest.TestCase):
 
     def export_flow(self, asset_model: Any) -> Any:
         """Export new asset."""
-        api_module = self.scene.import_module("jb_api")
+        api_module = self.scene.import_plugin()
         self.assertIsNotNone(api_module)
 
         original_create_asset = api_module.JbAPI.create_asset
@@ -121,7 +111,7 @@ class BaseJikoBridgeTests(unittest.TestCase):
         """Update existing asset."""
         self.scene.select_objects([container])
 
-        exporter_module = self.scene.import_module("jb_asset_exporter")
+        exporter_module = self.scene.import_plugin()
         exporter = exporter_module.JbAssetExporter(self.scene.source)
         export_message = exporter.export_message()
         self.assertIn("update", export_message.lower())
@@ -134,7 +124,7 @@ class BaseJikoBridgeTests(unittest.TestCase):
 
         self.check_import_message("active asset")
 
-        api_module = self.scene.import_module("jb_api")
+        api_module = self.scene.import_plugin()
 
         def injected_active_asset(*_args: Any, **_kwargs: Any) -> Any:
             return api_module.JbAPI().get_asset(asset_model)
@@ -165,14 +155,14 @@ class BaseJikoBridgeTests(unittest.TestCase):
 
     def get_asset(self, asset: AssetModel) -> AssetModel:
         """Get asset from api."""
-        api_module = self.scene.import_module("jb_api")
+        api_module = self.scene.import_plugin()
         asset = api_module.JbAPI().get_asset(asset)
         self.assertIsNotNone(asset, "Asset should be found")
         return asset
 
     def check_import_message(self, value: str) -> str:
         """Get import message."""
-        importer_module = self.scene.import_module("jb_asset_importer")
+        importer_module = self.scene.import_plugin()
         importer = importer_module.JbAssetImporter(self.scene.source)
         msg = importer.import_message()
 

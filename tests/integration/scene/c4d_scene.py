@@ -1,14 +1,16 @@
-"""
-Helper class for managing Cinema 4D scenes during integration tests.
-Code by Semyon Shapoval, 2026
-"""
-
 import os
-import importlib
+import sys
+import importlib.machinery
+import importlib.util
 from typing import Optional
 
 import c4d
 from tests.integration.scene.base_scene import BaseScene
+
+PLUGIN_MODULE = "jiko_bridge_c4d"
+PLUGIN_BUNDLE = os.path.join(
+    os.environ.get("g_additionalModulePath", ""), f"{PLUGIN_MODULE}.pyp"
+)
 
 
 class Scene(BaseScene):
@@ -23,13 +25,21 @@ class Scene(BaseScene):
     def source(self) -> c4d.documents.BaseDocument:
         return self._source
 
-    def import_module(self, module_name: str):
-        """Resolve a logical module name inside the plugin package."""
-        return importlib.import_module(f"jiko_bridge_c4d.{module_name}")
+    def import_plugin(self):
+        """Load the flat plugin bundle."""
+        if PLUGIN_MODULE not in sys.modules:
+            loader = importlib.machinery.SourceFileLoader(PLUGIN_MODULE, PLUGIN_BUNDLE)
+            module = importlib.util.module_from_spec(
+                importlib.util.spec_from_loader(PLUGIN_MODULE, loader)
+            )
+            sys.modules[PLUGIN_MODULE] = module
+            loader.exec_module(module)
+
+        return sys.modules[PLUGIN_MODULE]
 
     def call_command(self, operator: str):
         try:
-            ops = self.import_module("jb_commands")
+            ops = self.import_plugin()
         except ImportError as e:
             raise RuntimeError("jiko_bridge operator should be registered") from e
         commands = getattr(ops, "JbCommands")(self.source)
@@ -176,7 +186,7 @@ class Scene(BaseScene):
         c4d.EventAdd()
 
     def set_export_format(self, fmt: str) -> None:
-        jb_settings = self.import_module("jb_settings")
+        jb_settings = self.import_plugin()
         combo_options_export_format = jb_settings.COMBO_OPTIONS_EXPORT_FORMAT
         jb_settings_mod = jb_settings.JbSettings
 

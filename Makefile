@@ -34,11 +34,6 @@ c4d-test:
 	set "g_additionalModulePath=$(C4D_PLUGIN_PATH)" && \
 	"$(C4D_PYTHON)" "$(CURDIR)/tests/integration/test_flows.py" || exit /B 0
 
-blend:
-	make blend-lint
-	make blend-typecheck
-	make blend-test
-
 blend-run:
 	@echo "Running Blender..."
 	@set "BLENDER_USER_SCRIPTS=$(ROOT_ADDONS_PATH)" && \

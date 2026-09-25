@@ -1,8 +1,3 @@
-"""
-Base scene helper interface for integration tests.
-Code by Semyon Shapoval, 2026
-"""
-
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
@@ -17,9 +12,14 @@ class BaseScene(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def import_module(self, module_name: str) -> Any:
-        """Import a module from the target application's plugin package."""
+    def import_plugin(self) -> Any:
+        """Return the loaded Jiko Bridge plugin bundle of this application."""
         raise NotImplementedError
+
+    def asset_classes(self) -> tuple[Any, Any]:
+        """Return the (AssetModel, AssetFile) classes of the loaded plugin."""
+        plugin = self.import_plugin()
+        return plugin.AssetModel, plugin.AssetFile
 
     @abstractmethod
     def call_command(self, operator: str) -> Any:

@@ -3,8 +3,8 @@ Register Jiko Bridge Blender Plugin
 Code by Semyon Shapoval, 2026
 """
 
-import sys
 import os
+import sys
 
 root_path = os.path.join(os.path.dirname(__file__))
 if root_path not in sys.path:
@@ -23,7 +23,6 @@ bl_info = {
 }
 
 from .jiko_bridge_blend import register, unregister  # pylint: disable=wrong-import-position
-
 
 if __name__ == "__main__":
     register()

@@ -3,11 +3,11 @@ Utility functions for Jiko Bridge Blender plugin.
 Code by Semyon Shapoval, 2026
 """
 
-import sys
 import logging
+import sys
 
-import bpy
 import addon_utils
+import bpy
 
 
 def get_logger(name: str) -> logging.Logger:

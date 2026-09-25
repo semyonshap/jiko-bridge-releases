@@ -7,9 +7,8 @@ from typing import Optional
 
 import bpy
 
-
-from .jb_scene_objects import JbSceneObjects
 from ..jb_types import AssetModel, JbContainer
+from .jb_scene_objects import JbSceneObjects
 
 
 class JbSceneContainer(JbSceneObjects):

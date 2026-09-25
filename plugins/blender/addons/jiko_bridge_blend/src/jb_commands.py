@@ -4,6 +4,7 @@ Code by Semyon Shapoval, 2026
 """
 
 import bpy
+
 from .jb_settings import JbSettings
 
 

@@ -5,13 +5,13 @@ are errors rather than silently replaced by a runtime module loader.
 """
 
 import ast
-from dataclasses import dataclass, field
 import importlib.util
 import os
-from pathlib import Path
 import symtable
 import tempfile
 import tokenize
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterable, NoReturn, TypeGuard
 
 # AST visitors use visit_NodeName; graph state intentionally holds per-module metadata.
@@ -56,15 +56,18 @@ def _main_guard(node: ast.AST) -> TypeGuard[ast.If]:
         return False
     left, right = test.left, test.comparators[0]
     return any(
-        isinstance(name, ast.Name) and name.id == "__name__"
-        and isinstance(value, ast.Constant) and value.value == "__main__"
+        isinstance(name, ast.Name)
+        and name.id == "__name__"
+        and isinstance(value, ast.Constant)
+        and value.value == "__main__"
         for name, value in ((left, right), (right, left))
     )
 
 
 def _docstring(node: ast.AST) -> TypeGuard[ast.Expr]:
     return (
-        isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+        isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Constant)
         and isinstance(node.value.value, str)
     )
 
@@ -184,9 +187,9 @@ class _FlattenModules(ast.NodeTransformer):
 class _Builder:
     def __init__(self, entry, search_paths, external, strip_docstrings):
         self.entry = Path(entry).resolve()
-        self.roots = tuple(dict.fromkeys(
-            [Path(path).resolve() for path in search_paths] + [self.entry.parent]
-        ))
+        self.roots = tuple(
+            dict.fromkeys([Path(path).resolve() for path in search_paths] + [self.entry.parent])
+        )
         for root in self.roots:
             if not root.is_dir():
                 raise BundleError(f"Import root is not a directory: {root}")
@@ -234,19 +237,22 @@ class _Builder:
         # An imported script's __main__ branch must not run inside the bundle.
         if name != "__entry__":
             tree.body = [
-                item for node in tree.body
+                item
+                for node in tree.body
                 for item in (node.orelse if _main_guard(node) else [node])
             ]
             # Export lists and package versions do not define a flat module's metadata.
             # Remove only literal, unread metadata; explicit imports will fail identity checks.
             reads = {
-                node.id for node in ast.walk(tree)
+                node.id
+                for node in ast.walk(tree)
                 if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
             }
             retained: list[ast.stmt] = []
             for node in tree.body:
                 if (
-                    isinstance(node, ast.Assign) and len(node.targets) == 1
+                    isinstance(node, ast.Assign)
+                    and len(node.targets) == 1
                     and isinstance(node.targets[0], ast.Name)
                     and node.targets[0].id in {"__all__", "__version__"} - reads
                 ):
@@ -298,8 +304,7 @@ class _Builder:
         if not node.level:
             return node.module or ""
         package = (
-            module.name if module.path.name == "__init__.py"
-            else module.name.rpartition(".")[0]
+            module.name if module.path.name == "__init__.py" else module.name.rpartition(".")[0]
         )
         if module.name == "__entry__" or not package:
             module.fail(node, "Relative imports require a package module, not an entry script.")
@@ -370,8 +375,10 @@ class _Builder:
             if top_level:
                 for alias in node.names:
                     self.bind(
-                        module, alias.asname or alias.name,
-                        ("external", base + "." + alias.name), node,
+                        module,
+                        alias.asname or alias.name,
+                        ("external", base + "." + alias.name),
+                        node,
                     )
             return
         if not top_level:
@@ -386,24 +393,33 @@ class _Builder:
             bound = alias.asname or alias.name
             self.bind(module, bound, ("local", base + ":" + alias.name), node)
             if alias.asname and alias.asname != alias.name:
-                replacement.append(ast.Assign(
-                    targets=[ast.Name(id=alias.asname, ctx=ast.Store())],
-                    value=ast.Name(id=alias.name, ctx=ast.Load()),
-                ))
+                replacement.append(
+                    ast.Assign(
+                        targets=[ast.Name(id=alias.asname, ctx=ast.Store())],
+                        value=ast.Name(id=alias.name, ctx=ast.Load()),
+                    )
+                )
         module.replacements[id(node)] = replacement
 
     def analyze(self, module: _Module):
         """Reject module-dependent constructs and collect global name bindings."""
         top_nodes = {id(node) for node in module.tree.body}
         guarded_names = {
-            id(item) for node in module.tree.body if _main_guard(node)
+            id(item)
+            for node in module.tree.body
+            if _main_guard(node)
             for item in ast.walk(node.test)
         }
         for node in ast.walk(module.tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 self.analyze_import(module, node, id(node) in top_nodes)
             if isinstance(node, ast.Name) and node.id in {
-                "__file__", "__path__", "__package__", "__spec__", "__loader__", "__cached__",
+                "__file__",
+                "__path__",
+                "__package__",
+                "__spec__",
+                "__loader__",
+                "__cached__",
             }:
                 module.fail(node, f"{node.id} depends on module identity and cannot be flattened.")
             if isinstance(node, ast.Name) and node.id == "__name__":
@@ -427,7 +443,8 @@ class _Builder:
             if symbol.is_assigned() or symbol.is_namespace():
                 self.bind(module, symbol.get_name(), ("definition", module.name), module.tree)
             if (
-                symbol.is_imported() and symbol.get_name() not in module.bindings
+                symbol.is_imported()
+                and symbol.get_name() not in module.bindings
                 and symbol.get_name() not in module.aliases
                 and symbol.get_name() not in self.futures
             ):
@@ -448,7 +465,8 @@ class _Builder:
         check_aliases(table)
         for node in ast.walk(module.tree):
             if (
-                isinstance(node, ast.Attribute) and node.attr == "modules"
+                isinstance(node, ast.Attribute)
+                and node.attr == "modules"
                 and isinstance(node.value, ast.Name)
                 and module.bindings.get(node.value.id) == ("external", "sys")
             ):
@@ -458,10 +476,20 @@ class _Builder:
                     module.fail(node, "String references to local module aliases are unsupported.")
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                 origin = module.bindings.get(node.func.id)
-                if origin and origin[0] == "external" and origin[1] in {
-                    "importlib.import_module", "importlib.reload", "builtins.__import__",
-                    "builtins.exec", "builtins.eval", "builtins.globals", "builtins.locals",
-                }:
+                if (
+                    origin
+                    and origin[0] == "external"
+                    and origin[1]
+                    in {
+                        "importlib.import_module",
+                        "importlib.reload",
+                        "builtins.__import__",
+                        "builtins.exec",
+                        "builtins.eval",
+                        "builtins.globals",
+                        "builtins.locals",
+                    }
+                ):
                     module.fail(node, "Aliased dynamic imports/namespace inspection unsupported")
             if isinstance(node, ast.Global):
                 for name in node.names:
@@ -521,12 +549,15 @@ class _Builder:
                         "Rename the symbol or use a consistent import alias."
                     )
                 owners[name] = (identity, module)
+
         def check(scope, module):
             for symbol in scope.get_symbols():
                 name = symbol.get_name()
                 if (
-                    symbol.is_referenced() and symbol.is_global()
-                    and name not in module.bindings and name in owners
+                    symbol.is_referenced()
+                    and symbol.is_global()
+                    and name not in module.bindings
+                    and name in owners
                 ):
                     raise BundleError(
                         f"{module.path}: Global {name!r} would accidentally bind to "
@@ -548,7 +579,8 @@ class _Builder:
         imports = _ImportBlock()
         for module in ordered:
             body = [
-                statement for node in module.tree.body
+                statement
+                for node in module.tree.body
                 for statement in module.replacements.get(id(node), [node])
             ]
             # Module docstrings become section comments rather than stray expressions.
@@ -608,7 +640,10 @@ def bundle_to_file(
 ) -> BundleResult:
     """Build and atomically replace output; never overwrite any input module."""
     result = bundle(
-        entry, search_paths=search_paths, external=external, strip_docstrings=strip_docstrings,
+        entry,
+        search_paths=search_paths,
+        external=external,
+        strip_docstrings=strip_docstrings,
     )
     destination = Path(output).resolve()
     if destination in result.modules:
@@ -617,8 +652,13 @@ def bundle_to_file(
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", newline="\n", dir=destination.parent,
-            prefix=destination.name + ".", suffix=".tmp", delete=False,
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=destination.parent,
+            prefix=destination.name + ".",
+            suffix=".tmp",
+            delete=False,
         ) as stream:
             temporary = Path(stream.name)
             stream.write(result.source)

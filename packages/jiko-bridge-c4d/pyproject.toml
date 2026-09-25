@@ -5,24 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "jiko-bridge-c4d"
 dynamic = ["version"]
-description = "Jiko Bridge plugin package for Cinema 4D."
 requires-python = ">=3.10"
-license = { text = "MIT" }
-authors = [{ name = "Semyon Shapoval" }]
-keywords = [
-    "jiko",
-    "bridge",
-    "pipeline",
-    "dcc",
-    "cinema4d",
-]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Topic :: Multimedia :: Graphics :: 3D Modeling",
-]
 dependencies = ["jiko-bridge-client>=1.0.0"]
 
 [tool.hatch.version]

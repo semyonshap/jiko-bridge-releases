@@ -3,12 +3,12 @@ Types Jiko Bridge
 Code by Semyon Shapoval, 2026
 """
 
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
 from typing import Any, List, Optional
-import mathutils
 
 import bpy
+import mathutils
 
 JbSource = bpy.types.Context
 JbMatrix = mathutils.Matrix

@@ -7,10 +7,11 @@ from logging import Logger
 from typing import Optional
 
 import bpy
-from ..jb_types import JbSource
-from .jb_scene_temp import JBSceneTemp
-from ..jb_utils import get_logger
+
 from ..jb_settings import JbSettings
+from ..jb_types import JbSource
+from ..jb_utils import get_logger
+from .jb_scene_temp import JBSceneTemp
 
 
 class JbScene(JBSceneTemp):

@@ -8,9 +8,8 @@ from typing import Generator, Optional
 
 import bpy
 
-
-from ..jb_types import JbMaterial, JbData, JbObject, JbContainer
 from ..jb_protocols import JbSceneABC
+from ..jb_types import JbContainer, JbData, JbMaterial, JbObject
 
 
 class JbSceneObjects(JbSceneABC):

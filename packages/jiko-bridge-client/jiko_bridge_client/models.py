@@ -3,8 +3,8 @@ Data models shared by every Jiko Bridge integration.
 Code by Semyon Shapoval, 2026
 """
 
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, TypedDict
 
 

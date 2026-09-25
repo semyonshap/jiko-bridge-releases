@@ -23,6 +23,9 @@ venv:
 sync-deps: ## Install/update dev dependency group
 	$(PIP) install --group dev
 
+format:
+	$(PYTHON) -m black plugins packages
+	$(PYTHON) -m isort plugins packages
 
 lint:
 	make blend-lint

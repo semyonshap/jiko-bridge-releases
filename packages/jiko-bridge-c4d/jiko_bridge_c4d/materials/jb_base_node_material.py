@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 from typing import Optional
 
 import c4d
 import maxon
+
 from jiko_bridge_client import get_logger
 
 node_material_logger = get_logger(__name__)

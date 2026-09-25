@@ -1,22 +1,23 @@
 from pymxs import runtime as rt
 
+
 class JB_AssetImporter:
     def __init__(self, api, material_importer):
         self.api = api
         self.material_importer = material_importer
-    
-    def import_asset(self, asset = None) -> bool:
+
+    def import_asset(self, asset=None) -> bool:
         if not asset:
             return self._import_active_asset()
 
         return self._create_model(asset)
-        
+
     def _import_active_asset(self):
         asset = self.api.get_active_asset()
         if not asset:
             print("Could not get active asset")
             return False
-        
+
         if asset.asset_type == "MODEL":
             return self._create_model(asset)
         elif asset.asset_type == "MATERIAL":
@@ -36,7 +37,6 @@ class JB_AssetImporter:
             print(f"Unsupported file type: {ext}")
             return False
 
-
     def _import_fbx(self, file_path: str):
         """Imports an FBX file"""
         try:
@@ -53,7 +53,7 @@ class JB_AssetImporter:
             rt.FBXImporterSetParam("SmoothingGroups", True)
 
             rt.importFile(file_path, rt.name("noPrompt"), using=rt.FBXIMP)
-                
+
         except Exception as e:
             print(f"Error importing FBX: {e}")
             return False
@@ -65,14 +65,14 @@ class JB_AssetImporter:
                 alembic_importer = rt.AlembicImport()
                 alembic_importer.filename = file_path
                 result = alembic_importer.importToScene()
-                
+
                 if not result:
                     print(f"Ошибка импорта Alembic файла: {file_path}")
                     return False
             else:
                 print("Alembic not available")
                 return False
-                
+
         except Exception as e:
             print(f"Error importing Alembic: {e}")
             return False

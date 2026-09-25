@@ -33,9 +33,7 @@ $(foreach pkg,$(PKG_PATHS),$(eval $(call PKG_BUILD_RULE,$(pkg))))
 
 pkg-build: $(PKG_BUILD_TARGETS) ## Build sdist + wheel for every package
 
-# Упаковка конкретных пакетов подключается из packages/*/package.mk, поэтому
-# здесь остаётся только общий шаг: собрать артефакты всех пакетов.
-pkg-package-c4d: ## Bundle the Cinema 4D plugin into dist/cinema4d/jiko_bridge_c4d.pyp
-	$(PYTHON) packages/jiko-bundler/bundle.py plugins/cinema4d/jiko_bridge_c4d.pyp -I packages/jiko-bridge-c4d -I packages/jiko-bridge-client --external c4d --external maxon -o dist/cinema4d/jiko_bridge_c4d.pyp
+pkg-package-c4d: ## Bundle the Cinema 4D plugin into plugins/cinema4d/jiko_bridge_c4d.pyp
+	$(PYTHON) packages/jiko-bundler/bundle.py packages/jiko-bridge-c4d/jiko_bridge_c4d/entry.py -I packages/jiko-bridge-c4d -I packages/jiko-bridge-client --external c4d --external maxon -o plugins/cinema4d/jiko_bridge_c4d.pyp
 
 pkg-package: pkg-build pkg-package-c4d $(PKG_PACKAGE_TARGETS) ## Build distributable artifacts for every package

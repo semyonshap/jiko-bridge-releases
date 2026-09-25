@@ -1,7 +1,8 @@
 import os
-import maya.cmds as cmds
 
+import maya.cmds as cmds
 from jb_asset_model import AssetModel
+
 
 class JB_AssetImporter:
     def import_asset(self, asset: AssetModel) -> bool:
@@ -15,15 +16,24 @@ class JB_AssetImporter:
             else:
                 print(f"Неподдерживаемый тип файла: {file_ext}")
                 return False
-                
+
         except Exception as e:
             print(f"Ошибка при импорте: {e}")
             return False
-    
+
     def import_fbx(self, file_path: str) -> bool:
         """Импортирует FBX файл"""
         try:
-            cmds.file(file_path, i=True, type="FBX", ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, options="fbx", pr=True)
+            cmds.file(
+                file_path,
+                i=True,
+                type="FBX",
+                ignoreVersion=True,
+                ra=True,
+                mergeNamespacesOnClash=False,
+                options="fbx",
+                pr=True,
+            )
             print(f"Import FBX: {file_path}")
             return True
         except Exception as e:

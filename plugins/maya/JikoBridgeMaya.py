@@ -1,17 +1,17 @@
-import maya.OpenMayaMPx as OpenMayaMPx
-import maya.OpenMaya as OpenMaya
 import maya.cmds as cmds
-
-from maya import OpenMayaUI
-from PySide6 import QtWidgets, QtCore
-from shiboken6 import wrapInstance
-
+import maya.OpenMaya as OpenMaya
+import maya.OpenMayaMPx as OpenMayaMPx
 from jb_api import JB_API
 from jb_asset_importer import JB_AssetImporter
+from maya import OpenMayaUI
+from PySide6 import QtCore, QtWidgets
+from shiboken6 import wrapInstance
+
 
 def get_maya_main_window():
     ptr = OpenMayaUI.MQtUtil.mainWindow()
     return wrapInstance(int(ptr), QtWidgets.QWidget)
+
 
 class JB_CommandsDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
@@ -36,7 +36,7 @@ class JB_CommandsDialog(QtWidgets.QDialog):
             self.importer.import_asset(asset)
             print(asset)
             return asset
-        
+
         return None
 
     def closeEvent(self, event):
@@ -53,19 +53,24 @@ def show_ui():
     ui = JB_CommandsDialog(parent=get_maya_main_window())
     ui.show()
 
+
 class JikoBridge(OpenMayaMPx.MPxCommand):
     def __init__(self):
         OpenMayaMPx.MPxCommand.__init__(self)
+
     def doIt(self, args):
         show_ui()
 
+
 def cmdCreator():
     return OpenMayaMPx.asMPxPtr(JikoBridge())
+
 
 def initializePlugin(mobject):
     mplugin = OpenMayaMPx.MFnPlugin(mobject)
     mplugin.registerCommand("JikoBridge", cmdCreator)
     show_ui()
+
 
 def uninitializePlugin(mobject):
     mplugin = OpenMayaMPx.MFnPlugin(mobject)

@@ -5,6 +5,8 @@ dev = [
   "fake-bpy-module-latest",
   "build",
   "twine",
+  "black",
+  "isort"
 ]
 
 [tool.mypy]

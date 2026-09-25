@@ -108,7 +108,9 @@ class JbAssetExporter(JbAssetExporterBase):
         for file in asset.files:
             container, _ = self.scene.get_or_create_asset_container(asset, file)
             self.scene.move_objects_to_container(objects, container)
-            asset_export_logger.info("Asset '%s' created with type '%s'.", asset.asset_name, file.asset_type)
+            asset_export_logger.info(
+                "Asset '%s' created with type '%s'.", asset.asset_name, file.asset_type
+            )
 
     def _export_project(self) -> None:
         if filepath := self.scene.get_project_filepath():

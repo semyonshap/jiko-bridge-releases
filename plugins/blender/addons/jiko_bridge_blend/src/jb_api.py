@@ -10,9 +10,8 @@ import urllib.error
 import urllib.request
 from typing import Optional
 
-
-from .jb_types import AssetModel
 from .jb_protocols import JbAPIProtocol
+from .jb_types import AssetModel
 from .jb_utils import get_logger
 
 DEFAULT_PORT = 5174

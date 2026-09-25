@@ -4,6 +4,7 @@ Code by Semyon Shapoval, 2026
 """
 
 import bpy
+
 from .jb_protocols import JbSettingsABC
 
 ADDON_ID = __package__.split('.', maxsplit=1)[0]

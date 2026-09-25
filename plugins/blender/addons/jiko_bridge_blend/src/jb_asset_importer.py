@@ -4,11 +4,11 @@ Code by Semyon Shapoval, 2026
 """
 
 from .jb_api import JbAPI
-from .scene.jb_scene import JbScene
-from .materials.jb_material_importer import JbMaterialImporter
-from .jb_types import AssetModel, JbSource, JbContainer, JbMaterial
-from .jb_utils import get_logger
 from .jb_protocols import JbAssetImporterProtocol
+from .jb_types import AssetModel, JbContainer, JbMaterial, JbSource
+from .jb_utils import get_logger
+from .materials.jb_material_importer import JbMaterialImporter
+from .scene.jb_scene import JbScene
 
 logger = get_logger(__name__)
 

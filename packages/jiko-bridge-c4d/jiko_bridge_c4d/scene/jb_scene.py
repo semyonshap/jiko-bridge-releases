@@ -1,8 +1,9 @@
 import os
-from typing import Optional
 from logging import Logger
+from typing import Optional
 
 import c4d
+
 from jiko_bridge_c4d.jb_settings import JbSettings
 from jiko_bridge_c4d.jb_types import JbSource
 from jiko_bridge_c4d.scene.jb_scene_file import JbSceneFile

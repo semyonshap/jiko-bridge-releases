@@ -4,10 +4,12 @@ Code by Semyon Shapoval, 2026
 """
 
 from __future__ import annotations
+
 from typing import List
 
-import bpy
 import bmesh
+import bpy
+
 from ..jb_types import JbObject
 from .jb_scene_container import JbSceneContainer
 

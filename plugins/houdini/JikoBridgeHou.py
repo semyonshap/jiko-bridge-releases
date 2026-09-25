@@ -1,7 +1,8 @@
 from jb_api import JB_API
 from jb_importer import JB_Importer
 
-class JikoBridge():
+
+class JikoBridge:
     def __init__(self):
         self.api = JB_API()
         self.importer = JB_Importer()

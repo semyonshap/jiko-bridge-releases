@@ -4,11 +4,12 @@ Code by Semyon Shapoval, 2026
 """
 
 import bpy
-from .src.jb_commands import JB_PT_Commands, JB_MT_PIE_AssetActions
+
 from .src.jb_asset_exporter import JbAssetExporter
 from .src.jb_asset_importer import JbAssetImporter
-from .src.jb_utils import register_keymap, reload_plugin_modules, unregister_keymap
+from .src.jb_commands import JB_MT_PIE_AssetActions, JB_PT_Commands
 from .src.jb_settings import register_settings, unregister_settings
+from .src.jb_utils import register_keymap, reload_plugin_modules, unregister_keymap
 from .src.scene.jb_scene import JbScene
 
 

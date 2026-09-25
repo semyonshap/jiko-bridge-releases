@@ -8,7 +8,7 @@ from typing import Optional
 import bpy
 
 from ..jb_protocols import JbMaterialImporterABC
-from ..jb_types import AssetModel, AssetFile
+from ..jb_types import AssetFile, AssetModel
 from ..jb_utils import get_logger
 from .jb_standard_material import JBStandardMaterial
 

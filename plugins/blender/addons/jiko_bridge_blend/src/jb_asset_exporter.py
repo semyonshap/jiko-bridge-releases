@@ -6,11 +6,11 @@ Code by Semyon Shapoval, 2026
 from pathlib import Path
 
 from .jb_api import JbAPI
-from .jb_types import JbSource, AssetModel, AssetFile
-from .scene.jb_scene import JbScene
-from .jb_utils import get_logger
 from .jb_protocols import JbAssetExporterProtocol
 from .jb_settings import JbSettings
+from .jb_types import AssetFile, AssetModel, JbSource
+from .jb_utils import get_logger
+from .scene.jb_scene import JbScene
 
 logger = get_logger(__name__)
 

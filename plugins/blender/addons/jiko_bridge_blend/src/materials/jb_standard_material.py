@@ -4,6 +4,7 @@ Code by Semyon Shapoval, 2026
 """
 
 import bpy
+
 from ..jb_utils import get_logger
 from .jb_base_node_material import JBBaseNodeMaterial
 
@@ -20,6 +21,7 @@ NODE_TEX_IMAGE = "ShaderNodeTexImage"
 
 class JBStandardMaterial(JBBaseNodeMaterial):
     """Principled BSDF node material for Blender."""
+
     @property
     def _nodes(self):
         return self._mat.node_tree.nodes

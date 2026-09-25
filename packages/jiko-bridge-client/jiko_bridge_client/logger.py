@@ -1,9 +1,8 @@
+import json
 import logging
 import os
-from typing import Any, Optional
-
-import json
 import urllib.error
+from typing import Any, Optional
 
 JB_ENV = os.getenv("JB_ENV", "production")
 

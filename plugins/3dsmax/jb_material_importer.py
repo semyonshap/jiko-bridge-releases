@@ -1,4 +1,4 @@
-class JB_MaterialImporter():
+class JB_MaterialImporter:
     def __init__(self):
         pass
 

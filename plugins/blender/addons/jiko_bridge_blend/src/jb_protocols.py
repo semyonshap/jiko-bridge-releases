@@ -5,13 +5,13 @@ Code by Semyon Shapoval, 2026
 
 from abc import ABC, abstractmethod
 from logging import Logger
-from typing import Protocol, Generator, Optional, TypedDict, List
+from typing import Generator, List, Optional, Protocol, TypedDict
 
 from .jb_types import (
     AssetFile,
     AssetModel,
-    JbData,
     JbContainer,
+    JbData,
     JbMaterial,
     JbMatrix,
     JbObject,

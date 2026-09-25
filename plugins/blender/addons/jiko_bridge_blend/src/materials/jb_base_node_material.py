@@ -4,6 +4,7 @@ Code by Semyon Shapoval, 2026
 """
 
 from __future__ import annotations
+
 from collections import defaultdict
 
 import bpy

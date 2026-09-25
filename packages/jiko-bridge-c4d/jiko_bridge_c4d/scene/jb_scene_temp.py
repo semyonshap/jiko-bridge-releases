@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 
 import c4d
+
 from jiko_bridge_c4d.scene.jb_scene_instance import JbSceneInstance
 
 

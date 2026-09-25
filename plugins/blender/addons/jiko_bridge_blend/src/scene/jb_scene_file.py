@@ -4,12 +4,13 @@ Code by Semyon Shapoval, 2026
 """
 
 import os
-import uuid
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Optional
 
 import bpy
+
 from .jb_scene_instance import JbSceneInstance
 
 

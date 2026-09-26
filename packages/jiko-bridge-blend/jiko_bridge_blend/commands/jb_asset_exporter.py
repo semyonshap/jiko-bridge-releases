@@ -2,9 +2,9 @@ from pathlib import Path
 
 from jiko_bridge_client import AssetFile, AssetModel, JbAPI, get_logger
 
-from .jb_settings import JbSettings
-from .jb_types import JbAssetExporterBase, JbSource
-from .scene.jb_scene import JbScene
+from ..jb_settings import JbSettings
+from ..jb_types import JbAssetExporterBase, JbSource
+from ..scene.jb_scene import JbScene
 
 asset_export_logger = get_logger(__name__)
 

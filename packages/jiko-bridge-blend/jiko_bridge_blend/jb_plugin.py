@@ -1,7 +1,7 @@
 import bpy
 
-from .jb_asset_exporter import JbAssetExporter
-from .jb_asset_importer import JbAssetImporter
+from .commands.jb_asset_exporter import JbAssetExporter
+from .commands.jb_asset_importer import JbAssetImporter
 from .jb_commands import JB_MT_PIE_AssetActions, JB_PT_Commands
 from .jb_settings import register_settings, unregister_settings
 from .jb_utils import register_keymap, unregister_keymap

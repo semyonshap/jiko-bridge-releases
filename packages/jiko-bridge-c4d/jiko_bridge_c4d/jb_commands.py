@@ -1,6 +1,6 @@
 import c4d
-from jiko_bridge_c4d.jb_asset_exporter import JbAssetExporter
-from jiko_bridge_c4d.jb_asset_importer import JbAssetImporter
+from jiko_bridge_c4d.commands.jb_asset_exporter import JbAssetExporter
+from jiko_bridge_c4d.commands.jb_asset_importer import JbAssetImporter
 from jiko_bridge_c4d.jb_settings import JbSettingsDialog
 from jiko_bridge_c4d.jb_types import JbSource
 from jiko_bridge_c4d.scene.jb_scene import JbScene

@@ -1,8 +1,8 @@
 from jiko_bridge_client import AssetModel, JbAPI, get_logger
 
-from .jb_types import JbAssetImporterBase, JbContainer, JbMaterial, JbSource
-from .materials.jb_material_importer import JbMaterialImporter
-from .scene.jb_scene import JbScene
+from ..jb_types import JbAssetImporterBase, JbContainer, JbMaterial, JbSource
+from ..materials.jb_material_importer import JbMaterialImporter
+from ..scene.jb_scene import JbScene
 
 asset_import_logger = get_logger(__name__)
 

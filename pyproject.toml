@@ -1,10 +1,12 @@
 [dependency-groups]
 dev = [
-  "mypy",
-  "pylint",
-  "fake-bpy-module-latest",
-  "black",
-  "isort"
+    "mypy",
+    "pylint",
+    "fake-bpy-module-latest",
+    "types-houdini",
+    "types-usd",
+    "black",
+    "isort"
 ]
 
 [tool.mypy]
@@ -19,6 +21,7 @@ mypy_path = [
     "packages/jiko-bridge-c4d",
     "packages/jiko-bridge-blend",
     "packages/jiko-bridge-client",
+    "packages/jiko-bridge-houdini",
     "packages/jiko-bundler",
 ]
 
@@ -58,6 +61,4 @@ disable = [
     "too-many-positional-arguments",
     "too-many-branches",
     "too-many-ancestors",
-    # DCC plugins intentionally mirror each other file by file.
-    "duplicate-code"
 ]

@@ -4,7 +4,7 @@ PKG_PATHS := $(patsubst %/pyproject.toml,%,$(wildcard packages/*/pyproject.toml)
 
 PKG_PACKAGE_TARGETS := $(foreach mk,$(wildcard packages/*/package.mk),package-$(notdir $(dir $(mk))))
 
-.PHONY: pkg pkg-install pkg-lint pkg-typecheck pkg-package pkg-package-c4d pkg-package-blend $(PKG_PACKAGE_TARGETS)
+.PHONY: pkg pkg-install pkg-lint pkg-typecheck pkg-package pkg-package-c4d pkg-package-blend pkg-package-houdini $(PKG_PACKAGE_TARGETS)
 
 pkg: ## Lint and typecheck every package in packages/
 	make pkg-lint
@@ -37,4 +37,7 @@ pkg-package-blend: ## Bundle the Blender addon
 		--external addon_utils \
 		-o dist/blender/addons/jiko_bridge_blend/__init__.py
 
-pkg-bundle: pkg-package-c4d pkg-package-blend format $(PKG_PACKAGE_TARGETS) ## Bundle distributable artifacts for every plugin
+pkg-package-houdini: ## Bundle the Houdini HDA PythonModule
+	$(PYTHON) packages/jiko-bridge-houdini/build.py
+
+pkg-bundle: pkg-package-c4d pkg-package-blend pkg-package-houdini format $(PKG_PACKAGE_TARGETS) ## Bundle distributable artifacts for every plugin

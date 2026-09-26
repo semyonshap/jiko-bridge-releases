@@ -61,6 +61,13 @@ def log_http(
 
     if error is None:
         logger.debug("API response: %s\n%s", sent, _pretty(response))
+    elif isinstance(error, urllib.error.HTTPError) and error.code == 404:
+        logger.debug(
+            "JB_API not found: %s %s\nRequest: %s",
+            error.code,
+            error.reason,
+            sent,
+        )
     elif isinstance(error, urllib.error.HTTPError):
         logger.error(
             "JB_API HTTP error: %s %s\nRequest: %s\nResponse: %s",

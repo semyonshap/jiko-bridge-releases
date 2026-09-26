@@ -467,6 +467,8 @@ def log_http(
         sent += '\n' + _pretty(payload)
     if error is None:
         logger.debug('API response: %s\n%s', sent, _pretty(response))
+    elif isinstance(error, urllib.error.HTTPError) and error.code == 404:
+        logger.debug('JB_API not found: %s %s\nRequest: %s', error.code, error.reason, sent)
     elif isinstance(error, urllib.error.HTTPError):
         logger.error(
             'JB_API HTTP error: %s %s\nRequest: %s\nResponse: %s',
@@ -518,51 +520,41 @@ class JbAPI(JbAPIABC):
     def _request(
         self, endpoint: str, payload: Optional[dict] = None, method: str = 'GET', timeout: int = 15
     ) -> Optional[dict]:
-        url = f'{self.base_url}{endpoint}'
-        data = json.dumps(payload).encode() if payload else None
+        data = json.dumps(payload).encode() if payload is not None else None
         headers = {'Content-Type': 'application/json'} if data else {}
+        req = urllib.request.Request(
+            f'{self.base_url}{endpoint}', data=data, headers=headers, method=method
+        )
         try:
-            req = urllib.request.Request(url, data=data, headers=headers, method=method)
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 parsed = json.loads(resp.read().decode())
-                pretty = json.dumps(parsed, indent=2, ensure_ascii=False)
-                logger.debug('API response: %s %s\n%s', method, endpoint, pretty)
-                return parsed
-        except urllib.error.HTTPError as e:
-            logger.error('JB_API HTTP error: %s %s', e.code, e.reason)
-            return None
         except (urllib.error.URLError, json.JSONDecodeError, OSError) as e:
-            logger.exception('JB_API error: %s', e)
+            log_http(logger, method, endpoint, payload, error=e)
             return None
+        log_http(logger, method, endpoint, payload, response=parsed)
+        return parsed
 
-    def _asset_from_response(self, resp: Optional[dict]) -> Optional[AssetModel]:
-        payload = (resp or {}).get('data')
-        if not payload:
-            return None
-        return AssetModel.from_dict(payload)
+    def _asset(
+        self, endpoint: str, payload: Optional[dict] = None, method: str = 'GET', timeout: int = 15
+    ) -> Optional[AssetModel]:
+        """Query an asset endpoint and decode the reply into an asset."""
+        data = (self._request(endpoint, payload, method, timeout) or {}).get('data')
+        return AssetModel.from_dict(data) if data else None
 
     def get_active_asset(self) -> Optional[AssetModel]:
-        return self._asset_from_response(self._request('/api/asset/active'))
+        return self._asset('/api/asset/active')
 
-    def get_asset_by_search(self, search_key) -> Optional[AssetModel]:
-        return self._asset_from_response(
-            self._request('/api/asset', {'searchKey': search_key}, method='POST')
-        )
+    def get_asset_by_search(self, search_key: str) -> Optional[AssetModel]:
+        return self._asset('/api/asset', {'searchKey': search_key}, 'POST')
 
-    def get_asset(self, asset) -> Optional[AssetModel]:
-        return self._asset_from_response(
-            self._request('/api/asset', asset.to_dict(), method='POST')
-        )
+    def get_asset(self, asset: AssetModel) -> Optional[AssetModel]:
+        return self._asset('/api/asset', asset.to_dict(), 'POST')
 
     def create_asset(self, asset: AssetModel) -> Optional[AssetModel]:
-        return self._asset_from_response(
-            self._request('/api/asset/create', asset.to_dict(), method='POST', timeout=300)
-        )
+        return self._asset('/api/asset/create', asset.to_dict(), 'POST', 300)
 
     def update_asset(self, asset: AssetModel) -> Optional[AssetModel]:
-        return self._asset_from_response(
-            self._request('/api/asset/update', asset.to_dict(), method='POST', timeout=30)
-        )
+        return self._asset('/api/asset/update', asset.to_dict(), 'POST', 30)
 
 
 # --- jiko_bridge_client ---
@@ -1636,6 +1628,7 @@ class JbAssetImporter(JbAssetImporterBase):
         self._asset_cache: dict[str, AssetModel | None] = {}
 
     def import_assets(self):
+        self._asset_cache = {}
         assets = self._collect_assets()
         for asset in assets:
             self._import_single(asset)
@@ -1661,17 +1654,12 @@ class JbAssetImporter(JbAssetImporterBase):
             for mat in materials:
                 mat_name = self.materials.get_material_name(mat)
                 asset_model = AssetModel.from_string(mat_name)
-                if asset_model:
-                    asset = self.api.get_asset(asset_model)
-                    if asset:
-                        assets.append(asset)
-                else:
-                    asset = self.api.get_asset_by_search(mat_name)
-                    if asset:
-                        assets.append(asset)
-                        self.materials.set_material_name(
-                            mat, f'{asset.pack_name}__{asset.asset_name}'
-                        )
+                asset = self._resolve_asset(mat_name)
+                if not asset:
+                    continue
+                assets.append(asset)
+                if not asset_model:
+                    self.materials.set_material_name(mat, f'{asset.pack_name}__{asset.asset_name}')
         elif containers:
             for container in containers:
                 self.scene.clear_container(container)
@@ -1687,6 +1675,18 @@ class JbAssetImporter(JbAssetImporterBase):
             if asset:
                 assets.append(asset)
         return list(assets)
+
+    def _resolve_asset(self, name: str) -> AssetModel | None:
+        """Resolve an asset by bundled name or by search, caching misses too."""
+        if name in self._asset_cache:
+            return self._asset_cache[name]
+        asset_model = AssetModel.from_string(name)
+        if asset_model:
+            asset = self.api.get_asset(asset_model)
+        else:
+            asset = self.api.get_asset_by_search(name)
+        self._asset_cache[name] = asset
+        return asset
 
     def _import_single(self, asset: AssetModel) -> None:
         for file in asset.files:
@@ -1711,7 +1711,6 @@ class JbAssetImporter(JbAssetImporterBase):
 
     def _convert_to_instances(self, container) -> None:
         queue = [container]
-        self._asset_cache = {}
         visited = set()
         while queue:
             current = queue.pop(0)
@@ -1720,27 +1719,17 @@ class JbAssetImporter(JbAssetImporterBase):
             visited.add(id(current))
             objects = self.scene.walk([current])
             for obj in objects:
-                asset_model = self._resolve_asset_from_object(obj)
-                if asset_model and (
-                    asset_container := self._resolve_placeholder(obj, current, asset_model)
-                ):
+                asset_model = None
+                for name in self.scene.get_names_from_placeholder(obj):
+                    asset_model = self._resolve_asset(name)
+                    if asset_model:
+                        break
+                if not asset_model:
+                    continue
+                asset_container = self._resolve_placeholder(obj, current, asset_model)
+                if asset_container:
                     queue.append(asset_container)
             self.scene.cleanup_container(current)
-
-    def _resolve_asset_from_object(self, obj) -> AssetModel | None:
-        names = self.scene.get_names_from_placeholder(obj)
-        for name in names:
-            if cached := self._asset_cache.get(name):
-                return cached
-            raw_asset = AssetModel.from_string(name)
-            if raw_asset:
-                asset = self.api.get_asset(raw_asset)
-            else:
-                asset = self.api.get_asset_by_search(name)
-            self._asset_cache[name] = asset
-            if asset:
-                return asset
-        return None
 
     def _resolve_placeholder(self, obj, container, asset_model) -> JbContainer | None:
         asset_container = self.scene.get_container(asset_model)

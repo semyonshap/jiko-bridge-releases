@@ -6,7 +6,7 @@ import urllib.request
 from typing import Optional
 
 from .contracts import JbAPIABC
-from .logger import get_logger
+from .logger import get_logger, log_http
 from .models import AssetModel
 
 DEFAULT_PORT = 5174
@@ -53,49 +53,44 @@ class JbAPI(JbAPIABC):
         method: str = "GET",
         timeout: int = 15,
     ) -> Optional[dict]:
-        url = f"{self.base_url}{endpoint}"
-        data = json.dumps(payload).encode() if payload else None
+        data = json.dumps(payload).encode() if payload is not None else None
         headers = {"Content-Type": "application/json"} if data else {}
+        req = urllib.request.Request(
+            f"{self.base_url}{endpoint}", data=data, headers=headers, method=method
+        )
 
         try:
-            req = urllib.request.Request(url, data=data, headers=headers, method=method)
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 parsed = json.loads(resp.read().decode())
-                pretty = json.dumps(parsed, indent=2, ensure_ascii=False)
-                logger.debug("API response: %s %s\n%s", method, endpoint, pretty)
-                return parsed
-        except urllib.error.HTTPError as e:
-            logger.error("JB_API HTTP error: %s %s", e.code, e.reason)
-            return None
         except (urllib.error.URLError, json.JSONDecodeError, OSError) as e:
-            logger.exception("JB_API error: %s", e)
+            log_http(logger, method, endpoint, payload, error=e)
             return None
 
-    def _asset_from_response(self, resp: Optional[dict]) -> Optional[AssetModel]:
-        payload = (resp or {}).get("data")
-        if not payload:
-            return None
-        return AssetModel.from_dict(payload)
+        log_http(logger, method, endpoint, payload, response=parsed)
+        return parsed
+
+    def _asset(
+        self,
+        endpoint: str,
+        payload: Optional[dict] = None,
+        method: str = "GET",
+        timeout: int = 15,
+    ) -> Optional[AssetModel]:
+        """Query an asset endpoint and decode the reply into an asset."""
+        data = (self._request(endpoint, payload, method, timeout) or {}).get("data")
+        return AssetModel.from_dict(data) if data else None
 
     def get_active_asset(self) -> Optional[AssetModel]:
-        return self._asset_from_response(self._request("/api/asset/active"))
+        return self._asset("/api/asset/active")
 
-    def get_asset_by_search(self, search_key) -> Optional[AssetModel]:
-        return self._asset_from_response(
-            self._request("/api/asset", {"searchKey": search_key}, method="POST")
-        )
+    def get_asset_by_search(self, search_key: str) -> Optional[AssetModel]:
+        return self._asset("/api/asset", {"searchKey": search_key}, "POST")
 
-    def get_asset(self, asset) -> Optional[AssetModel]:
-        return self._asset_from_response(
-            self._request("/api/asset", asset.to_dict(), method="POST")
-        )
+    def get_asset(self, asset: AssetModel) -> Optional[AssetModel]:
+        return self._asset("/api/asset", asset.to_dict(), "POST")
 
     def create_asset(self, asset: AssetModel) -> Optional[AssetModel]:
-        return self._asset_from_response(
-            self._request("/api/asset/create", asset.to_dict(), method="POST", timeout=300)
-        )
+        return self._asset("/api/asset/create", asset.to_dict(), "POST", 300)
 
     def update_asset(self, asset: AssetModel) -> Optional[AssetModel]:
-        return self._asset_from_response(
-            self._request("/api/asset/update", asset.to_dict(), method="POST", timeout=30)
-        )
+        return self._asset("/api/asset/update", asset.to_dict(), "POST", 30)

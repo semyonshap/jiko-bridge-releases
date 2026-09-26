@@ -16,15 +16,15 @@ pkg-lint: ## Lint every package in packages/
 pkg-typecheck: ## Typecheck every package in packages/
 	$(PYTHON) -m mypy --config-file=pyproject.toml --python-version=3.11 $(PKG_PATHS)
 
-pkg-package-c4d: ## Bundle the Cinema 4D plugin into plugins/cinema4d/jiko_bridge_c4d.pyp
+pkg-package-c4d: ## Bundle the Cinema 4D plugin
 	$(PYTHON) packages/jiko-bundler/bundle.py packages/jiko-bridge-c4d/jiko_bridge_c4d/entry.py \
 		-I packages/jiko-bridge-c4d \
 		-I packages/jiko-bridge-client \
 		--external c4d \
 		--external maxon \
-		-o plugins/cinema4d/jiko_bridge_c4d.pyp
+		-o dist/cinema4d/jiko_bridge_c4d.pyp
 
-pkg-package-blend: ## Bundle the Blender addon into plugins/blender/addons/jiko_bridge_blend/__init__.py
+pkg-package-blend: ## Bundle the Blender addon
 	$(PYTHON) packages/jiko-bundler/bundle.py packages/jiko-bridge-blend/jiko_bridge_blend/entry.py \
 		-I packages/jiko-bridge-blend \
 		-I packages/jiko-bridge-client \
@@ -32,6 +32,6 @@ pkg-package-blend: ## Bundle the Blender addon into plugins/blender/addons/jiko_
 		--external bmesh \
 		--external mathutils \
 		--external addon_utils \
-		-o plugins/blender/addons/jiko_bridge_blend/__init__.py
+		-o dist/blender/addons/jiko_bridge_blend/__init__.py
 
 pkg-bundle: pkg-package-c4d pkg-package-blend format $(PKG_PACKAGE_TARGETS) ## Bundle distributable artifacts for every plugin

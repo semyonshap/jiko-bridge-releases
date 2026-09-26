@@ -21,6 +21,7 @@ class JbAssetImporter(JbAssetImporterBase):
         self._asset_cache: dict[str, AssetModel | None] = {}
 
     def import_assets(self):
+        self._asset_cache = {}
         assets = self._collect_assets()
 
         for asset in assets:
@@ -58,18 +59,15 @@ class JbAssetImporter(JbAssetImporterBase):
                 mat_name = self.materials.get_material_name(mat)
                 if not mat_name:
                     continue
-                asset_model = AssetModel.from_string(mat_name)
-                if asset_model:
-                    asset = self.api.get_asset(asset_model)
-                    if asset:
-                        assets.append(asset)
-                else:
-                    asset = self.api.get_asset_by_search(mat_name)
-                    if asset:
-                        assets.append(asset)
-                        self.materials.set_material_name(
-                            mat, f"{asset.pack_name}__{asset.asset_name}"
-                        )
+
+                asset = self._resolve_asset(mat_name)
+                if not asset:
+                    continue
+
+                assets.append(asset)
+
+                if not AssetModel.from_string(mat_name):
+                    self.materials.set_material_name(mat, f"{asset.pack_name}__{asset.asset_name}")
         elif containers:
             for container in containers:
                 self.scene.clear_container(container)
@@ -112,7 +110,6 @@ class JbAssetImporter(JbAssetImporterBase):
 
     def _convert_to_instances(self, container) -> None:
         queue = [container]
-        self._asset_cache = {}
         visited = set()
 
         while queue:
@@ -123,33 +120,34 @@ class JbAssetImporter(JbAssetImporterBase):
 
             objects = self.scene.walk([current])
             for obj in objects:
-                asset_model = self._resolve_asset_from_object(obj)
-                if asset_model and (
-                    asset_container := self._resolve_placeholder(obj, current, asset_model)
-                ):
+                asset_model = None
+                for name in self.scene.get_names_from_placeholder(obj):
+                    asset_model = self._resolve_asset(name)
+                    if asset_model:
+                        break
+
+                if not asset_model:
+                    continue
+
+                asset_container = self._resolve_placeholder(obj, current, asset_model)
+                if asset_container:
                     queue.append(asset_container)
 
             self.scene.cleanup_container(current)
 
-    def _resolve_asset_from_object(self, obj) -> AssetModel | None:
-        names = self.scene.get_names_from_placeholder(obj)
+    def _resolve_asset(self, name: str) -> AssetModel | None:
+        """Resolve an asset by bundled name or by search, caching misses too."""
+        if name in self._asset_cache:
+            return self._asset_cache[name]
 
-        for name in names:
-            if cached := self._asset_cache.get(name):
-                return cached
+        asset_model = AssetModel.from_string(name)
+        if asset_model:
+            asset = self.api.get_asset(asset_model)
+        else:
+            asset = self.api.get_asset_by_search(name)
 
-            raw_asset = AssetModel.from_string(name)
-            if raw_asset:
-                asset = self.api.get_asset(raw_asset)
-            else:
-                asset = self.api.get_asset_by_search(name)
-
-            self._asset_cache[name] = asset
-
-            if asset:
-                return asset
-
-        return None
+        self._asset_cache[name] = asset
+        return asset
 
     def _resolve_placeholder(self, obj, container, asset_model) -> JbContainer | None:
         asset_container = self.scene.get_container(asset_model)

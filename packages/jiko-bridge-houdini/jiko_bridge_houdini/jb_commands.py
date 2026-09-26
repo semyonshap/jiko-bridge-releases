@@ -16,8 +16,16 @@ class JbCommands:
         self.asset_solo = JbAssetSolo(source)
 
     def import_asset(self) -> None:
-        """Import the container asset, or the active asset for an empty HDA."""
+        """Import the active asset and refresh the assembled stage."""
+        scene = self.asset_import.scene
+        if not scene.has_asset():
+            asset = self.asset_import.api.get_active_asset()
+            if asset is not None:
+                scene.select_asset(asset)
         self.asset_import.import_assets()
+        scene.refresh()
+        if scene.warnings:
+            report(scene.logger, scene.report())
 
     def active_asset(self) -> None:
         """Select the active Bridge asset without cooking its files yet."""

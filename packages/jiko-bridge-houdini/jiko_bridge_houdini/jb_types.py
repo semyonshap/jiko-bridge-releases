@@ -12,6 +12,7 @@ from jiko_bridge_client import (
     JbSceneABC,
     JbSettingsABC,
 )
+from pxr import Usd
 
 JbSource: TypeAlias = hou.OpNode
 JbMatrix: TypeAlias = hou.Matrix4
@@ -20,20 +21,38 @@ JbMaterial: TypeAlias = hou.OpNode
 
 @dataclass(eq=False)
 class JbContainer:
-    """An asset container authored into USD after SOP discovery."""
+    """An asset authored as a container prim inside its own USD layer."""
 
-    record: dict[str, Any]
-    objects: list["JbObject"] = field(default_factory=list)
-    parent: Optional["JbContainer"] = None
+    layer: str
+    root: str
+    stage: Usd.Stage
+    asset: dict[str, Any] = field(default_factory=dict)
+    models: dict[str, "JbModel"] = field(default_factory=dict)
+    remove_objects: list[str] = field(default_factory=list)
+    pending: list["JbObject"] = field(default_factory=list)
+
+
+@dataclass(eq=False)
+class JbModel:
+    """One parsed model file of a container, kept until the layer is authored."""
+
+    source: str
+    geometry: Optional[hou.Geometry] = None
+    placeholders: list["Placeholder"] = field(default_factory=list)
+
+    @property
+    def converted(self) -> bool:
+        """Whether the file has to be converted rather than referenced."""
+        return self.geometry is not None
 
 
 @dataclass(eq=False)
 class JbObject:
-    """A source placeholder or a pending USD instance."""
+    """A placeholder parsed from a file, or an instance awaiting authoring."""
 
     data: dict[str, Any]
-    parent: Optional[JbContainer] = None
-    target: Optional[JbContainer] = None
+    parent: Optional["JbContainer"] = None
+    target: Optional["JbContainer"] = None
 
 
 JbData: TypeAlias = JbContainer | JbObject | JbMaterial

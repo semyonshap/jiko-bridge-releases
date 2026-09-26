@@ -392,7 +392,9 @@ class JbAssetImporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObje
         if name in self._asset_cache:
             return self._asset_cache[name]
         query = AssetModel.from_string(name)
-        asset = self.api.get_asset(query) if query else self.api.get_asset_by_search(name)
+        asset = self.api.get_asset(query) if query else None
+        if asset is None:
+            asset = self.api.get_asset_by_search(name)
         self._asset_cache[name] = asset
         return asset
 

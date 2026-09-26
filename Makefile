@@ -25,8 +25,8 @@ sync-deps: pkg-install ## Install/update dev dependency group
 	$(PIP) install --group dev
 
 format:
-	$(PYTHON) -m black plugins packages
-	$(PYTHON) -m isort plugins packages
+	$(PYTHON) -m black plugins packages out
+	$(PYTHON) -m isort plugins packages out
 
 c4d-test:
 	@cls

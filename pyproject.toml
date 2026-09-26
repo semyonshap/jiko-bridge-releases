@@ -47,8 +47,17 @@ line_length = 100
 supported_extensions = ["py", "pyi", "pyx", "pyp"]
 
 [tool.pylint.MASTER]
-extension-pkg-whitelist = ["c4d", "maxon"]
-ignored-modules = ["c4d", "maxon"]
+ignored-modules = [
+    "c4d",
+    "maxon",
+    "hou",
+    "loputils",
+    "pxr",
+    "bpy",
+    "bmesh",
+    "mathutils",
+    "addon_utils",
+]
 generated-members = ["c4d.*"]
 
 [tool.pylint."MESSAGES CONTROL"]
@@ -57,6 +66,8 @@ disable = [
     "broad-exception-caught",
 
     "missing-module-docstring",
+    "missing-class-docstring",
+
     "too-many-arguments",
     "too-many-positional-arguments",
     "too-many-branches",

@@ -25,7 +25,7 @@ pkg-package-c4d: ## Bundle the Cinema 4D plugin
 		-I packages/jiko-bridge-client \
 		--external c4d \
 		--external maxon \
-		-o dist/cinema4d/jiko_bridge_c4d.pyp
+		-o out/cinema4d/jiko_bridge_c4d.pyp
 
 pkg-package-blend: ## Bundle the Blender addon
 	$(PYTHON) packages/jiko-bundler/bundle.py packages/jiko-bridge-blend/jiko_bridge_blend/entry.py \
@@ -35,9 +35,16 @@ pkg-package-blend: ## Bundle the Blender addon
 		--external bmesh \
 		--external mathutils \
 		--external addon_utils \
-		-o dist/blender/addons/jiko_bridge_blend/__init__.py
+		-o out/blender/jiko_bridge_blend.py
 
 pkg-package-houdini: ## Bundle the Houdini HDA PythonModule
-	$(PYTHON) packages/jiko-bridge-houdini/build.py
+	$(PYTHON) packages/jiko-bundler/bundle.py \
+		packages/jiko-bridge-houdini/jiko_bridge_houdini/entry.py \
+		-I packages/jiko-bridge-houdini \
+		-I packages/jiko-bridge-client \
+		--external hou \
+		--external pxr \
+		--external loputils \
+		-o out/houdini/jiko_bridge_houdini.py
 
 pkg-bundle: pkg-package-c4d pkg-package-blend pkg-package-houdini format $(PKG_PACKAGE_TARGETS) ## Bundle distributable artifacts for every plugin

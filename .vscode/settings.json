@@ -8,5 +8,8 @@
   "mypy-type-checker.args": [
     "--config-file",
     "${workspaceFolder}/pyproject.toml"
-  ]
+  ],
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingModuleSource": "none"
+  }
 }

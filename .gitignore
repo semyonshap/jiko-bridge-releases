@@ -4,6 +4,3 @@ venv/
 .venv/
 env/
 logs/
-
-dist/
-_vendor/

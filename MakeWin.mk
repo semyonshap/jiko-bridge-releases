@@ -18,5 +18,5 @@ BLENDER_PLUGIN_PATH := $(ROOT_ADDONS_PATH)/addons/$(ADDON_NAME)
 # Cinema 4d
 C4D_PATH     ?= C:\Program Files\Maxon Cinema 4D 2023\Cinema 4D.exe
 C4D_PYTHON   ?= C:\Program Files\Maxon Cinema 4D 2023\c4dpy.exe
-C4D_PLUGIN_PATH := $(CURDIR)/dist/cinema4d
+C4D_PLUGIN_PATH := $(CURDIR)/plugins/cinema4d
 

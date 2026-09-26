@@ -4,11 +4,14 @@ PKG_PATHS := $(patsubst %/pyproject.toml,%,$(wildcard packages/*/pyproject.toml)
 
 PKG_PACKAGE_TARGETS := $(foreach mk,$(wildcard packages/*/package.mk),package-$(notdir $(dir $(mk))))
 
-.PHONY: pkg pkg-lint pkg-typecheck pkg-package pkg-package-c4d pkg-package-blend $(PKG_PACKAGE_TARGETS)
+.PHONY: pkg pkg-install pkg-lint pkg-typecheck pkg-package pkg-package-c4d pkg-package-blend $(PKG_PACKAGE_TARGETS)
 
 pkg: ## Lint and typecheck every package in packages/
 	make pkg-lint
 	make pkg-typecheck
+
+pkg-install: ## Install every package in packages/ into the venv (editable)
+	$(PIP) install $(foreach pkg,$(PKG_PATHS),-e $(pkg))
 
 pkg-lint: ## Lint every package in packages/
 	$(PYTHON) -m pylint --rcfile=pyproject.toml $(PKG_PATHS)

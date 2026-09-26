@@ -19,8 +19,9 @@ venv:
 	python -m venv venv
 	$(PYTHON) -m pip install --group dev
 	$(PIP) install -r requirements.txt
+	make pkg-install
 
-sync-deps: ## Install/update dev dependency group
+sync-deps: pkg-install ## Install/update dev dependency group
 	$(PIP) install --group dev
 
 format:

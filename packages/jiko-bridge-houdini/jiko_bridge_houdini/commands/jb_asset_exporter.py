@@ -1,15 +1,15 @@
 """Deferred Houdini features implementing the shared contract."""
 
-from jiko_bridge_client import get_logger
-from jiko_bridge_houdini.jb_types import JbAssetExporterBase, JbSource
+from jiko_bridge_houdini.jb_settings import JbSettings
+from jiko_bridge_houdini.jb_types import JbAssetExporterBase
+from jiko_bridge_houdini.scene.jb_scene import JbScene
 
 
 class JbAssetExporter(JbAssetExporterBase):
     """Placeholder until this feature is implemented for Houdini."""
 
-    def __init__(self, source: JbSource):
-        self.source = source
-        self.logger = get_logger(__name__)
+    scene_class = JbScene
+    settings_class = JbSettings
 
     def export_asset(self):
         """Reserved by the common DCC interface."""

@@ -11,9 +11,9 @@ Code by Semyon Shapoval, 2026
 
 from .api import DEFAULT_PORT, JbAPI
 from .contracts import (
-    JbAPIABC,
     JbAssetExporterABC,
     JbAssetImporterABC,
+    JbAssetSoloABC,
     JbContainerT,
     JbMaterialImporterABC,
     JbMaterialT,
@@ -46,7 +46,7 @@ __all__ = [
     "JbSettingsABC",
     "JbAssetImporterABC",
     "JbAssetExporterABC",
-    "JbAPIABC",
+    "JbAssetSoloABC",
     "JbPlaceholderInfo",
     # DCC-supplied type parameters
     "JbSourceT",

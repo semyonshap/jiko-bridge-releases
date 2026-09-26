@@ -122,7 +122,8 @@ class JbSceneObjects(JbSceneBase):
         if element is not None:
             obj[element] = value
 
-    def _set_visibility(self, obj: c4d.BaseObject, mode: int) -> None:
+    def set_container_visibility(self, obj: c4d.BaseObject, mode: int) -> None:
+        """Set the editor and render visibility mode of the container."""
         obj[c4d.ID_BASEOBJECT_VISIBILITY_EDITOR] = mode
         obj[c4d.ID_BASEOBJECT_VISIBILITY_RENDER] = mode
 

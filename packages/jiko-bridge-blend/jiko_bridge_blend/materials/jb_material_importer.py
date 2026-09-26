@@ -16,9 +16,11 @@ class JbMaterialImporter(JbMaterialImporterBase):
         self.source = source
 
     def get_material_name(self, material):
+        """Return the material name, or None if the material is missing."""
         return material.name if material else None
 
     def set_material_name(self, material, name):
+        """Rename the material if it exists."""
         if material:
             material.name = name
 

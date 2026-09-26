@@ -73,3 +73,6 @@ disable = [
     "too-many-branches",
     "too-many-ancestors",
 ]
+
+[tool.pylint.SIMILARITIES]
+min-similarity-lines = 12

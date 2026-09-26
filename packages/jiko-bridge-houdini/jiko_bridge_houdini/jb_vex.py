@@ -6,8 +6,24 @@ from jiko_bridge_houdini.jb_utils import run_verb
 VEX_FILES = "$HOUDINI_TEMP_DIR/jiko/jiko_bridge"
 VEX_RUN_OVER = {"detail": 0, "prim": 1, "point": 2, "vertex": 3, "number": 4}
 PLACEHOLDER_GROUP = "jiko_placeholders"
-FBX_VEX = "\nstring names[] = {};\nmatrix transform;\nif (jb_fbx_extract_placeholder(0, @primnum, names, transform)) {\n    s[]@jiko_names = names;\n    4@jiko_transform = transform;\n    @group_jiko_placeholders = 1;\n}\n"
-ABC_VEX = "\nstring names[] = {};\nmatrix transform;\nif (jb_abc_extract_placeholder(0, @primnum, names, transform)) {\n    s[]@jiko_names = names;\n    4@jiko_transform = transform;\n    @group_jiko_placeholders = 1;\n}\n"
+_PLACEHOLDER_VEX = """
+string names[] = {};
+matrix transform;
+if (JB_EXTRACT(0, @primnum, names, transform)) {
+    s[]@jiko_names = names;
+    4@jiko_transform = transform;
+    @group_jiko_placeholders = 1;
+}
+"""
+
+
+def marker_vex(extract_function: str) -> str:
+    """VEX marker that collects placeholders through an embedded library call."""
+    return _PLACEHOLDER_VEX.replace("JB_EXTRACT", extract_function)
+
+
+FBX_VEX = marker_vex("jb_fbx_extract_placeholder")
+ABC_VEX = marker_vex("jb_abc_extract_placeholder")
 
 
 def vex_snippet(body: str, library: str = "lib.vfl") -> str:

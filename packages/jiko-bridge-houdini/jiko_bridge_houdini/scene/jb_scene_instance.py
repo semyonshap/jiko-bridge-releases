@@ -1,5 +1,3 @@
-"""Read the placeholder objects of a source file, one reader per format."""
-
 import json
 import math
 from typing import Any, Iterator, Sequence, cast
@@ -38,6 +36,7 @@ def sop_placeholders(geometry: hou.Geometry, extension: str) -> Iterator[Placeho
 
 
 def usd_placeholders(path: str) -> Iterator[Placeholder]:
+    """Read square placeholder prims from a USD asset file."""
     stage = Usd.Stage.Open(path)
     if stage is None:
         raise hou.NodeError(f"Cannot open USD asset: {path}")
@@ -83,8 +82,9 @@ def plan_instances(graph: dict[str, Any]) -> None:
                     and all((math.isfinite(value) for value in matrix))
                 )
                 if not valid:
+                    label = asset["asset"].get("assetName") or asset["id"]
                     graph["warnings"].append(
-                        f"No exact transform for {location} in {asset['asset'].get('assetName') or asset['id']}; placeholder retained."
+                        f"No exact transform for {location} in {label}; placeholder retained."
                     )
                 ready = ready and valid and (not instance["cycle"])
             for instance in instances:
@@ -94,6 +94,7 @@ def plan_instances(graph: dict[str, Any]) -> None:
 
 
 def instance_points(sop: hou.SopNode) -> None:
+    """Write one point per replaceable instance into the output SOP."""
     input_node = sop.inputs()[0]
     if input_node is None:
         raise hou.NodeError("Connect the graph SOP to this node.")
@@ -134,8 +135,6 @@ class JbSceneInstance(JbSceneContainer):
 
     def replace_instances_with_placeholders(self, objects, source):
         self.logger.warning("Houdini placeholder export is not implemented.")
-        pass
 
     def create_placeholder(self, asset_model, transform, source):
         self.logger.warning("Houdini placeholder export is not implemented.")
-        pass

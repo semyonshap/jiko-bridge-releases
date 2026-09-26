@@ -13,6 +13,7 @@ class JB_PT_Commands(bpy.types.Panel):  # pylint: disable=invalid-name
     bl_category = "Jiko Bridge"
 
     def draw(self, context: bpy.types.Context):
+        """Draw the main panel."""
         layout = self.layout
 
         if not layout:
@@ -39,6 +40,7 @@ class JB_MT_PIE_AssetActions(bpy.types.Menu):  # pylint: disable=invalid-name
     bl_label = "Jiko Bridge"
 
     def draw(self, _context: bpy.types.Context):
+        """Draw the pie menu."""
         layout = self.layout
         if not layout:
             return

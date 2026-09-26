@@ -3,7 +3,8 @@
   "editor.insertSpaces": true,
   "python.defaultInterpreterPath": "${workspaceFolder}/venv/Scripts/python.exe",
   "python.analysis.extraPaths": [
-    "C:\\Program Files\\Maxon Cinema 4D 2023\\resource\\modules\\python\\libs\\python310"
+    "C:\\Program Files\\Maxon Cinema 4D 2023\\resource\\modules\\python\\libs\\python310",
+    "C:\\Program Files\\Side Effects Software\\Houdini 20.5.445\\houdini\\python3.11libs"
   ],
   "mypy-type-checker.args": [
     "--config-file",

@@ -1,11 +1,8 @@
-"""Import the files of a Jiko Bridge asset, one branch per bridge type."""
-
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any
 
 import hou
 from jiko_bridge_client import AssetModel
-from jiko_bridge_houdini.jb_types import MODEL_EXTENSIONS, USD_EXTENSIONS, Placeholder
 
 
 class JbSceneGraph:

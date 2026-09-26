@@ -1,19 +1,14 @@
-from typing import Any, Sequence
-
-from jiko_bridge_houdini.jb_types import MODEL_EXTENSIONS, USD_EXTENSIONS, Placeholder
-from jiko_bridge_houdini.jb_utils import pack_geometry, source_path
-from jiko_bridge_houdini.scene.jb_scene_instance import sop_placeholders, usd_placeholders
-
-"Read FBX file units without loading meshes or requiring the FBX SDK."
 import math
 import re
 import struct
 from pathlib import Path
-from typing import BinaryIO, Optional
+from typing import Any, BinaryIO, Optional, Sequence
 
 import hou
 from jiko_bridge_client import get_logger
-from jiko_bridge_houdini.jb_types import JbObject
+from jiko_bridge_houdini.jb_types import MODEL_EXTENSIONS, USD_EXTENSIONS, JbObject, Placeholder
+from jiko_bridge_houdini.jb_utils import pack_geometry, source_path
+from jiko_bridge_houdini.scene.jb_scene_instance import sop_placeholders, usd_placeholders
 from jiko_bridge_houdini.scene.jb_scene_temp import JbSceneTemp
 
 CM_TO_METERS = 0.01
@@ -140,13 +135,11 @@ class JbSceneFile(JbSceneTemp):
     def _import_fbx(self, file_path: str) -> bool:
         return self.import_file(file_path)
 
-    def export_file(self, ext):
+    def export_file(self, _ext):
         self.logger.warning("Houdini file export is not implemented.")
-        pass
 
-    def _export_fbx(self, file_path):
+    def _export_fbx(self, _file_path):
         self.logger.warning("Houdini FBX export is not implemented.")
-        pass
 
     def _import_model(self, record: dict[str, Any], entry: dict[str, Any]) -> Sequence[Placeholder]:
         """Import one model file: read its placeholders and pack its geometry."""

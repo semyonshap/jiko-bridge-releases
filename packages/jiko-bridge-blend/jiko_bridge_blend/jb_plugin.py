@@ -2,10 +2,10 @@ import bpy
 
 from .commands.jb_asset_exporter import JbAssetExporter
 from .commands.jb_asset_importer import JbAssetImporter
+from .commands.jb_asset_solo import JbAssetSolo
 from .jb_commands import JB_MT_PIE_AssetActions, JB_PT_Commands
 from .jb_settings import register_settings, unregister_settings
 from .jb_utils import register_keymap, unregister_keymap
-from .scene.jb_scene import JbScene
 
 
 class JB_OT_AssetImport(bpy.types.Operator):  # pylint: disable=invalid-name
@@ -17,11 +17,13 @@ class JB_OT_AssetImport(bpy.types.Operator):  # pylint: disable=invalid-name
     bl_options = {"REGISTER", "UNDO"}
 
     def invoke(self, context, event):
+        """Show a confirmation dialog before importing."""
         importer = JbAssetImporter(context)
         msg = importer.import_message()
         return context.window_manager.invoke_confirm(self, event, message=msg)
 
     def execute(self, context):
+        """Import the active asset."""
         importer = JbAssetImporter(context)
         importer.import_assets()
         return {"FINISHED"}
@@ -36,11 +38,13 @@ class JB_OT_AssetExport(bpy.types.Operator):  # pylint: disable=invalid-name
     bl_options = {"REGISTER", "UNDO"}
 
     def invoke(self, context, event):
+        """Show a confirmation dialog before exporting."""
         exporter = JbAssetExporter(context)
         msg = exporter.export_message()
         return context.window_manager.invoke_confirm(self, event, message=msg)
 
     def execute(self, context):
+        """Export the selected objects."""
         exporter = JbAssetExporter(context)
         exporter.export_asset()
         return {"FINISHED"}
@@ -55,7 +59,8 @@ class JB_OT_Solo(bpy.types.Operator):  # pylint: disable=invalid-name
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        JbScene(context).solo()
+        """Solo the selected asset."""
+        JbAssetSolo(context).solo()
         return {"FINISHED"}
 
 

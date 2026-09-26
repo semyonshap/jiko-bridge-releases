@@ -37,6 +37,73 @@ import hou
 import loputils
 from pxr import Gf, Sdf, Tf, Usd, UsdGeom
 
+# --- jiko_bridge_client.logger ---
+
+JB_ENV = os.getenv('JB_ENV', 'production')
+_DEFAULT_LEVEL = logging.INFO if JB_ENV == 'production' else logging.DEBUG
+
+
+def get_logger(name: str, level: int | None = None) -> logging.Logger:
+    """Return a logger with a single console handler.
+
+    Calling this twice for the same name returns the already configured
+    logger untouched, so imports are safe.
+    """
+    logger = logging.getLogger(name)
+    if logger.handlers:
+        return logger
+    logger.setLevel(level if level is not None else _DEFAULT_LEVEL)
+    formatter = logging.Formatter(
+        '[Jiko Bridge] %(levelname)s [%(name)s] %(message)s', datefmt='%H:%M:%S'
+    )
+    console = logging.StreamHandler()
+    console.setLevel(logging.DEBUG)
+    console.setFormatter(formatter)
+    logger.addHandler(console)
+    logger.propagate = False
+    return logger
+
+
+def _pretty(value: Any) -> str:
+    return json.dumps(value, indent=2, ensure_ascii=False)
+
+
+def _error_body(error: BaseException) -> str:
+    """Best-effort read of an HTTP error response body."""
+    try:
+        return getattr(error, 'read')().decode(errors='replace').strip() or '-'
+    except (AttributeError, OSError):
+        return '-'
+
+
+def log_http(
+    logger: logging.Logger,
+    method: str,
+    endpoint: str,
+    payload: Optional[dict] = None,
+    response: Optional[dict] = None,
+    error: Optional[BaseException] = None,
+) -> None:
+    """Log one HTTP exchange: what was sent, then the reply or the failure."""
+    sent = f'{method} {endpoint}'
+    if payload is not None:
+        sent += '\n' + _pretty(payload)
+    if error is None:
+        logger.debug('API response: %s\n%s', sent, _pretty(response))
+    elif isinstance(error, urllib.error.HTTPError) and error.code == 404:
+        logger.debug('JB_API not found: %s %s\nRequest: %s', error.code, error.reason, sent)
+    elif isinstance(error, urllib.error.HTTPError):
+        logger.error(
+            'JB_API HTTP error: %s %s\nRequest: %s\nResponse: %s',
+            error.code,
+            error.reason,
+            sent,
+            _error_body(error),
+        )
+    else:
+        logger.exception('JB_API error: %s\nRequest: %s', error, sent)
+
+
 # --- jiko_bridge_client.models ---
 
 # Data models shared by every Jiko Bridge integration.
@@ -96,6 +163,24 @@ class AssetModel:
         return None
 
     @classmethod
+    def from_container_fields(
+        cls,
+        pack_name: Optional[str],
+        asset_name: Optional[str],
+        active_type: Optional[str] = None,
+        vault_name: Optional[str] = None,
+    ) -> Optional['AssetModel']:
+        """Build an asset from the fields a container stores, or None if incomplete."""
+        if not (pack_name and asset_name):
+            return None
+        return cls(
+            pack_name=pack_name,
+            asset_name=asset_name,
+            active_type=active_type,
+            vault_name=vault_name,
+        )
+
+    @classmethod
     def from_dict(cls, data: dict) -> 'AssetModel':
         """Create an AssetModel instance from a dictionary."""
         return cls(
@@ -129,6 +214,87 @@ class JbPlaceholderInfo(TypedDict):
     transform: Any
 
 
+# --- jiko_bridge_client.api ---
+
+DEFAULT_PORT = 5174
+logger = get_logger('jiko_bridge_client.api')
+
+
+def _get_port() -> int:
+    """Read the API port from the Jiko Bridge desktop app settings.
+
+    Falls back to DEFAULT_PORT when the settings file is missing or
+    unreadable, so the client always has a usable address.
+    """
+    system = platform.system()
+    if system == 'Windows':
+        path = os.path.join(os.getenv('APPDATA', ''), 'jiko-bridge', 'settings.json')
+    elif system == 'Darwin':
+        path = os.path.expanduser('~/Library/Application Support/jiko-bridge/settings.json')
+    else:
+        base = os.getenv('XDG_CONFIG_HOME', os.path.expanduser('~/.config'))
+        path = os.path.join(base, 'jiko-bridge', 'settings.json')
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            port = json.load(f).get('apiPort')
+        if isinstance(port, int):
+            return port
+    except (OSError, json.JSONDecodeError):
+        pass
+    return DEFAULT_PORT
+
+
+class JbAPI:
+    """Client for communicating with the Jiko Bridge API server."""
+
+    def __init__(self, host: str = 'localhost', port: Optional[int] = None):
+        self.base_url = f'http://{host}:{port or _get_port()}'
+
+    def _request(
+        self, endpoint: str, payload: Optional[dict] = None, method: str = 'GET', timeout: int = 15
+    ) -> Optional[dict]:
+        data = json.dumps(payload).encode() if payload is not None else None
+        headers = {'Content-Type': 'application/json'} if data else {}
+        req = urllib.request.Request(
+            f'{self.base_url}{endpoint}', data=data, headers=headers, method=method
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                parsed = json.loads(resp.read().decode())
+        except (urllib.error.URLError, json.JSONDecodeError, OSError) as e:
+            log_http(logger, method, endpoint, payload, error=e)
+            return None
+        log_http(logger, method, endpoint, payload, response=parsed)
+        return parsed
+
+    def _asset(
+        self, endpoint: str, payload: Optional[dict] = None, method: str = 'GET', timeout: int = 15
+    ) -> Optional[AssetModel]:
+        """Query an asset endpoint and decode the reply into an asset."""
+        data = (self._request(endpoint, payload, method, timeout) or {}).get('data')
+        return AssetModel.from_dict(data) if data else None
+
+    def get_active_asset(self) -> Optional[AssetModel]:
+        """Get the currently active asset based on selection or context."""
+        return self._asset('/api/asset/active')
+
+    def get_asset_by_search(self, search_key: str) -> Optional[AssetModel]:
+        """Search for an Asset by a free-form key."""
+        return self._asset('/api/asset', {'searchKey': search_key}, 'POST')
+
+    def get_asset(self, asset: AssetModel) -> Optional[AssetModel]:
+        """Get Asset by an AssetModel object."""
+        return self._asset('/api/asset', asset.to_dict(), 'POST')
+
+    def create_asset(self, asset: AssetModel) -> Optional[AssetModel]:
+        """Create a new Asset with the given files and optional metadata."""
+        return self._asset('/api/asset/create', asset.to_dict(), 'POST', 300)
+
+    def update_asset(self, asset: AssetModel) -> Optional[AssetModel]:
+        """Update an existing Asset's files and metadata."""
+        return self._asset('/api/asset/update', asset.to_dict(), 'POST', 30)
+
+
 # --- jiko_bridge_client.contracts ---
 
 JbSourceT = TypeVar('JbSourceT')
@@ -136,6 +302,29 @@ JbMatrixT = TypeVar('JbMatrixT')
 JbContainerT = TypeVar('JbContainerT')
 JbObjectT = TypeVar('JbObjectT')
 JbMaterialT = TypeVar('JbMaterialT')
+
+
+class JbSettingsABC(ABC, Generic[JbSourceT, JbContainerT]):
+    """Abstract base class for per-scene settings storage.
+
+    Besides the general plugin settings it stores the solo history as opaque
+    container lists: the storage is DCC-specific, the semantics are not.
+    """
+
+    @abstractmethod
+    def __init__(self, source: JbSourceT) -> None: ...
+
+    @abstractmethod
+    def get_export_format(self) -> str:
+        """Return the current export format (e.g. 'fbx', 'abc')."""
+
+    @abstractmethod
+    def load_solo(self) -> list[list[JbContainerT]]:
+        """Return the stored solo selections, newest first."""
+
+    @abstractmethod
+    def save_solo(self, entries: list[list[JbContainerT]]) -> None:
+        """Replace the stored solo selections with the given entries, newest first."""
 
 
 class JbSceneABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]):
@@ -293,13 +482,12 @@ class JbSceneABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbM
     def get_project_filepath(self) -> Optional[str]:
         """Return the current project filepath, if it exists."""
 
-    @abstractmethod
-    def solo(self):
-        """Solo mode with history"""
 
-
-class JbMaterialImporterABC(ABC, Generic[JbMaterialT]):
+class JbMaterialImporterABC(ABC, Generic[JbSourceT, JbMaterialT]):
     """Abstract base class for Material Importers."""
+
+    @abstractmethod
+    def __init__(self, source: JbSourceT) -> None: ...
 
     @abstractmethod
     def get_material_name(self, material: JbMaterialT) -> str | None:
@@ -314,260 +502,326 @@ class JbMaterialImporterABC(ABC, Generic[JbMaterialT]):
         """Import a single material file into the scene."""
 
 
-class JbSettingsABC(ABC, Generic[JbContainerT]):
-    """Abstract base class for per-scene settings storage."""
+class JbAssetImporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]):
+    """Base class for asset importers holding the shared import workflow.
 
-    @abstractmethod
-    def get_export_format(self) -> str:
-        """Return the current export format (e.g. 'fbx', 'abc')."""
-
-    @abstractmethod
-    def load_solo_stack(self) -> list[list]:
-        """Return the full solo-mode history as a list of container lists."""
-
-    @abstractmethod
-    def save_solo_selection(self, containers: list[JbContainerT]) -> None:
-        """Push a new solo selection onto the history stack.
-
-        No-op if the selection is identical to the most recent entry.
-        """
-
-    @abstractmethod
-    def pop_solo_selection(self) -> list:
-        """Remove the current selection and return the previous one.
-
-        Returns an empty list if there is no previous entry.
-        """
-
-
-class JbAssetImporterABC(ABC, Generic[JbContainerT, JbObjectT, JbMaterialT]):
-    """Abstract base class for Asset Importers.
-
-    The source document is taken by ``__init__`` and is deliberately not part of
-    the contract: it describes the interface of an instance, not how it is built.
+    A plugin names ``scene_class`` and ``materials_class`` and, when it has to
+    deviate, overrides the matching hook below: the selection, lookup and
+    instance rules are implemented once here. The source document is taken by
+    ``__init__`` and is deliberately not part of the interface.
     """
 
-    @abstractmethod
+    scene_class: type[JbSceneABC[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]]
+    materials_class: type[JbMaterialImporterABC[JbSourceT, JbMaterialT]]
+
+    def __init__(self, source: JbSourceT):
+        self.source = source
+        self.api = JbAPI()
+        self.scene = self.scene_class(source)
+        self.materials = self.materials_class(source)
+        self._asset_cache: dict[str, AssetModel | None] = {}
+
+    @property
+    def logger(self) -> Logger:
+        """Logger of the concrete plugin module, so log lines stay traceable."""
+        return get_logger(type(self).__module__)
+
     def import_assets(self) -> None:
         """Imports assets by selection."""
+        self._asset_cache = {}
+        for asset in self._collect_assets():
+            self._import_single(asset)
 
-    @abstractmethod
     def import_message(self) -> str:
         """Return a confirmation message based on the current selection."""
+        materials, containers = self._collect_data()
+        if materials:
+            return f'Import assets for materials?\n{len(materials)} material(s) with asset info found in selection.'
+        if containers:
+            return f'Import assets for asset containers?\n{len(containers)} asset container(s) found in selection.'
+        return 'Import active asset from Jiko Bridge.'
 
-    @abstractmethod
-    def _collect_data(self) -> tuple[list[JbMaterialT], list[JbContainerT]]: ...
+    def _collect_data(self) -> tuple[list[JbMaterialT], list[JbContainerT]]:
+        objects = cast(List[JbObjectT], self.scene.get_selection())
+        return (
+            self.scene.get_materials_from_objects(objects),
+            self.scene.get_containers_from_objects(objects),
+        )
 
-    @abstractmethod
-    def _collect_assets(self) -> list[AssetModel]: ...
+    def _collect_assets(self) -> list[AssetModel]:
+        assets: list[AssetModel] = []
+        materials, containers = self._collect_data()
+        if materials:
+            for material in materials:
+                name = self.materials.get_material_name(material)
+                if not name:
+                    continue
+                asset = self._resolve_asset(name)
+                if asset is None:
+                    continue
+                assets.append(asset)
+                if not AssetModel.from_string(name):
+                    self.materials.set_material_name(
+                        material, f'{asset.pack_name}__{asset.asset_name}'
+                    )
+        elif containers:
+            for container in containers:
+                asset = self._asset_from_container(container)
+                if asset:
+                    assets.append(asset)
+        else:
+            asset = self.api.get_active_asset()
+            if asset:
+                assets.append(asset)
+        return assets
 
-    @abstractmethod
-    def _import_single(self, asset: AssetModel) -> None: ...
+    def _asset_from_container(self, container: JbContainerT) -> AssetModel | None:
+        """Re-read the asset of a container that is about to be imported into."""
+        self.scene.clear_container(container)
+        asset_model = self.scene.get_asset_data_from_container(container)
+        if not asset_model:
+            return None
+        asset_model.active_type = None
+        return self.api.get_asset(asset_model)
 
-    @abstractmethod
-    def _create_model(self, asset: AssetModel, file: AssetFile) -> JbContainerT: ...
+    def _import_single(self, asset: AssetModel) -> None:
+        for file in asset.files:
+            match file.bridge_type:
+                case 'model':
+                    container = self._create_model(asset, file)
+                    self._convert_to_instances(container)
+                case 'material':
+                    material = self.materials.import_material(asset, file)
+                    if material:
+                        self.scene.merge_duplicates_materials(material)
+                case _:
+                    self.logger.warning('Unsupported bridge type: %s', file.bridge_type)
 
-    @abstractmethod
-    def _convert_to_instances(self, container: JbContainerT) -> None: ...
+    def _create_model(self, asset: AssetModel, file: AssetFile) -> JbContainerT:
+        container, exists = self.scene.get_or_create_asset_container(asset, file)
+        if exists:
+            self.scene.create_instance(container, cast(str, asset.asset_name))
+        else:
+            self.scene.import_with_temp(cast(str, file.filepath), container)
+        return container
 
-    @abstractmethod
+    def _convert_to_instances(self, container: JbContainerT) -> None:
+        queue = [container]
+        visited: set[int] = set()
+        while queue:
+            current = queue.pop(0)
+            if id(current) in visited:
+                continue
+            visited.add(id(current))
+            for obj in cast(List[JbObjectT], self.scene.walk([current])):
+                asset_model = None
+                for name in self.scene.get_names_from_placeholder(obj):
+                    asset_model = self._resolve_asset(name)
+                    if asset_model:
+                        break
+                if not asset_model:
+                    continue
+                asset_container = self._resolve_placeholder(obj, current, asset_model)
+                if asset_container:
+                    queue.append(asset_container)
+            self.scene.cleanup_container(current)
+
+    def _resolve_asset(self, name: str) -> AssetModel | None:
+        """Resolve an asset by bundled name or by search, caching misses too."""
+        if name in self._asset_cache:
+            return self._asset_cache[name]
+        query = AssetModel.from_string(name)
+        asset = self.api.get_asset(query) if query else self.api.get_asset_by_search(name)
+        self._asset_cache[name] = asset
+        return asset
+
     def _resolve_placeholder(
         self, obj: JbObjectT, container: JbContainerT, asset_model: AssetModel
-    ) -> JbContainerT | None: ...
+    ) -> JbContainerT | None:
+        asset_container = self.scene.get_container(asset_model)
+        created = False
+        if not asset_container:
+            for file in asset_model.files:
+                asset_container, exists = self.scene.get_or_create_asset_container(
+                    asset_model, file
+                )
+                if not exists:
+                    self.scene.import_with_temp(cast(str, file.filepath), asset_container)
+            created = True
+        if asset_container is None:
+            return None
+        instance = self.scene.create_instance(asset_container, cast(str, asset_model.asset_name))
+        self.scene.copy_object_transform(instance, obj)
+        self.scene.move_objects_to_container([instance], container)
+        self.scene.remove_object(obj)
+        return asset_container if created else None
 
 
-class JbAssetExporterABC(ABC, Generic[JbContainerT, JbObjectT, JbMaterialT]):
-    """Abstract base class for Asset Exporters.
+class JbAssetExporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]):
+    """Base class for asset exporters holding the shared export workflow.
 
-    As in the importer contract, the source document is constructor-only and is
-    therefore not part of the interface.
+    As in the importer, the source document is constructor-only and the plugin
+    only names the collaborators the workflow needs.
     """
 
-    @abstractmethod
+    scene_class: type[JbSceneABC[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]]
+    settings_class: type[JbSettingsABC[JbSourceT, JbContainerT]]
+
+    def __init__(self, source: JbSourceT):
+        self.source = source
+        self.api = JbAPI()
+        self.scene = self.scene_class(source)
+
+    @property
+    def logger(self) -> Logger:
+        """Logger of the concrete plugin module, so log lines stay traceable."""
+        return get_logger(type(self).__module__)
+
     def export_asset(self) -> None:
         """Exports an asset from the scene into Jiko Bridge."""
+        selected_objects, asset_containers = self._collect_data()
+        if asset_containers:
+            for container in asset_containers:
+                self._update_asset(container)
+        elif selected_objects:
+            self._create_new_asset(selected_objects)
+        else:
+            self._export_project()
 
-    @abstractmethod
     def export_message(self) -> str:
         """Return a confirmation message based on the current selection and asset containers."""
+        selected_objects, asset_containers = self._collect_data()
+        if asset_containers:
+            return f'Update existing assets?\n{len(asset_containers)} asset(s) will be updated'
+        if selected_objects:
+            return f'No asset containers found in selection. Create new asset with {len(selected_objects)} object(s)?'
+        return 'Export project.'
 
-    @abstractmethod
-    def _collect_data(
-        self,
-    ) -> tuple[list[JbContainerT | JbObjectT | JbMaterialT], list[JbContainerT]]: ...
-
-    @abstractmethod
-    def _update_asset(self, container: JbContainerT) -> None: ...
-
-    @abstractmethod
-    def _create_new_asset(self, objects: list[JbObjectT]) -> None: ...
-
-
-class JbAPIABC(ABC):
-    """Abstract base class for Jiko Bridge API interactions."""
-
-    @abstractmethod
-    def get_active_asset(self) -> Optional[AssetModel]:
-        """Get the currently active asset based on selection or context."""
-
-    @abstractmethod
-    def get_asset_by_search(self, search_key: str) -> Optional[AssetModel]:
-        """Search for an Asset by a free-form key."""
-
-    @abstractmethod
-    def get_asset(self, asset: AssetModel) -> Optional[AssetModel]:
-        """Get Asset by an AssetModel object."""
-
-    @abstractmethod
-    def create_asset(self, asset: AssetModel) -> Optional[AssetModel]:
-        """Create a new Asset with the given files and optional metadata."""
-
-    @abstractmethod
-    def update_asset(self, asset: AssetModel) -> Optional[AssetModel]:
-        """Update an existing Asset's files and metadata."""
-
-
-# --- jiko_bridge_client.logger ---
-
-JB_ENV = os.getenv('JB_ENV', 'production')
-_DEFAULT_LEVEL = logging.INFO if JB_ENV == 'production' else logging.DEBUG
-
-
-def get_logger(name: str, level: int | None = None) -> logging.Logger:
-    """Return a logger with a single console handler.
-
-    Calling this twice for the same name returns the already configured
-    logger untouched, so imports are safe.
-    """
-    logger = logging.getLogger(name)
-    if logger.handlers:
-        return logger
-    logger.setLevel(level if level is not None else _DEFAULT_LEVEL)
-    formatter = logging.Formatter(
-        '[Jiko Bridge] %(levelname)s [%(name)s] %(message)s', datefmt='%H:%M:%S'
-    )
-    console = logging.StreamHandler()
-    console.setLevel(logging.DEBUG)
-    console.setFormatter(formatter)
-    logger.addHandler(console)
-    logger.propagate = False
-    return logger
-
-
-def _pretty(value: Any) -> str:
-    return json.dumps(value, indent=2, ensure_ascii=False)
-
-
-def _error_body(error: BaseException) -> str:
-    """Best-effort read of an HTTP error response body."""
-    try:
-        return getattr(error, 'read')().decode(errors='replace').strip() or '-'
-    except (AttributeError, OSError):
-        return '-'
-
-
-def log_http(
-    logger: logging.Logger,
-    method: str,
-    endpoint: str,
-    payload: Optional[dict] = None,
-    response: Optional[dict] = None,
-    error: Optional[BaseException] = None,
-) -> None:
-    """Log one HTTP exchange: what was sent, then the reply or the failure."""
-    sent = f'{method} {endpoint}'
-    if payload is not None:
-        sent += '\n' + _pretty(payload)
-    if error is None:
-        logger.debug('API response: %s\n%s', sent, _pretty(response))
-    elif isinstance(error, urllib.error.HTTPError) and error.code == 404:
-        logger.debug('JB_API not found: %s %s\nRequest: %s', error.code, error.reason, sent)
-    elif isinstance(error, urllib.error.HTTPError):
-        logger.error(
-            'JB_API HTTP error: %s %s\nRequest: %s\nResponse: %s',
-            error.code,
-            error.reason,
-            sent,
-            _error_body(error),
+    def _collect_data(self) -> tuple[list[JbObjectT | JbContainerT], list[JbContainerT]]:
+        selected_objects = cast(List[JbObjectT | JbContainerT], self.scene.get_selection())
+        return (
+            selected_objects,
+            self.scene.get_containers_from_objects(cast(List[JbObjectT], selected_objects)),
         )
-    else:
-        logger.exception('JB_API error: %s\nRequest: %s', error, sent)
+
+    def _update_asset(self, container: JbContainerT) -> None:
+        asset_model = self.scene.get_asset_data_from_container(container)
+        if not asset_model:
+            self.logger.error('Invalid asset information')
+            return
+        asset = self.api.get_asset(asset_model)
+        if not asset or not asset.files or (not asset.pack_name) or (not asset.asset_name):
+            self.logger.error("Failed to fetch asset '%s'.", asset_model.asset_name)
+            return
+        file = next(iter(asset.files))
+        if not file.filepath:
+            self.logger.error(
+                "Filepath missing for asset '%s'. Cannot export.", asset_model.asset_name
+            )
+            return
+        ext = Path(file.filepath.lower()).suffix.lstrip('.')
+        if not ext:
+            self.logger.error(
+                "Unable to determine export extension from filepath '%s' for '%s'.",
+                file.filepath,
+                asset_model.asset_name,
+            )
+            return
+        objects = self.scene.get_children(container)
+        if not objects:
+            self.logger.error(
+                "No objects found in container for asset '%s'. Cannot export.",
+                asset_model.asset_name,
+            )
+            return
+        filepath = self.scene.export_with_temp(objects, ext)
+        if not filepath:
+            return
+        asset.files = [
+            AssetFile(filepath=filepath, asset_type=file.asset_type, bridge_type=file.bridge_type)
+        ]
+        self.api.update_asset(asset)
+
+    def _create_new_asset(self, objects: list[JbObjectT | JbContainerT]) -> None:
+        fmt = self.settings_class(self.source).get_export_format()
+        filepath = self.scene.export_with_temp(objects, fmt)
+        if not filepath:
+            self.logger.error('Export failed.')
+            return
+        asset = self.api.create_asset(AssetModel(files=[AssetFile(filepath=filepath)]))
+        if not asset or not asset.files:
+            self.logger.error("No asset found for filepath '%s'", filepath)
+            return
+        for file in asset.files:
+            container, _ = self.scene.get_or_create_asset_container(asset, file)
+            self.scene.move_objects_to_container(cast(List[JbObjectT], objects), container)
+            self.logger.info(
+                "Asset '%s' created with type '%s'.", asset.asset_name, file.asset_type
+            )
+
+    def _export_project(self) -> None:
+        if filepath := self.scene.get_project_filepath():
+            self.api.create_asset(AssetModel(files=[AssetFile(filepath=filepath)]))
 
 
-# --- jiko_bridge_client.api ---
+class JbAssetSoloABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]):
+    """Base class for the solo command holding the shared solo workflow.
 
-DEFAULT_PORT = 5174
-logger = get_logger('jiko_bridge_client.api')
-
-
-def _get_port() -> int:
-    """Read the API port from the Jiko Bridge desktop app settings.
-
-    Falls back to DEFAULT_PORT when the settings file is missing or
-    unreadable, so the client always has a usable address.
+    The workflow picks the containers to isolate, keeps the history on the
+    settings, and leaves only the DCC-specific visibility work to
+    ``_apply_solo``.
     """
-    system = platform.system()
-    if system == 'Windows':
-        path = os.path.join(os.getenv('APPDATA', ''), 'jiko-bridge', 'settings.json')
-    elif system == 'Darwin':
-        path = os.path.expanduser('~/Library/Application Support/jiko-bridge/settings.json')
-    else:
-        base = os.getenv('XDG_CONFIG_HOME', os.path.expanduser('~/.config'))
-        path = os.path.join(base, 'jiko-bridge', 'settings.json')
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            port = json.load(f).get('apiPort')
-        if isinstance(port, int):
-            return port
-    except (OSError, json.JSONDecodeError):
-        pass
-    return DEFAULT_PORT
 
+    scene_class: type[JbSceneABC[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]]
+    settings_class: type[JbSettingsABC[JbSourceT, JbContainerT]]
+    history_size = 5
 
-class JbAPI(JbAPIABC):
-    """Client for communicating with the Jiko Bridge API server."""
+    def __init__(self, source: JbSourceT):
+        self.source = source
+        self.scene = self.scene_class(source)
 
-    def __init__(self, host: str = 'localhost', port: Optional[int] = None):
-        self.base_url = f'http://{host}:{port or _get_port()}'
+    @property
+    def logger(self) -> Logger:
+        """Logger of the concrete plugin module, so log lines stay traceable."""
+        return get_logger(type(self).__module__)
 
-    def _request(
-        self, endpoint: str, payload: Optional[dict] = None, method: str = 'GET', timeout: int = 15
-    ) -> Optional[dict]:
-        data = json.dumps(payload).encode() if payload is not None else None
-        headers = {'Content-Type': 'application/json'} if data else {}
-        req = urllib.request.Request(
-            f'{self.base_url}{endpoint}', data=data, headers=headers, method=method
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                parsed = json.loads(resp.read().decode())
-        except (urllib.error.URLError, json.JSONDecodeError, OSError) as e:
-            log_http(logger, method, endpoint, payload, error=e)
-            return None
-        log_http(logger, method, endpoint, payload, response=parsed)
-        return parsed
+    def solo(self) -> None:
+        """Isolate the selection, or the previous selection when it is empty."""
+        containers = self._solo_selection()
+        if containers:
+            self._apply_solo(containers)
 
-    def _asset(
-        self, endpoint: str, payload: Optional[dict] = None, method: str = 'GET', timeout: int = 15
-    ) -> Optional[AssetModel]:
-        """Query an asset endpoint and decode the reply into an asset."""
-        data = (self._request(endpoint, payload, method, timeout) or {}).get('data')
-        return AssetModel.from_dict(data) if data else None
+    def _solo_selection(self) -> list[JbContainerT]:
+        objects = cast(List[JbObjectT], self.scene.get_selection())
+        combine = self.scene.get_containers_from_instances(
+            objects
+        ) + self.scene.get_containers_from_objects(objects)
+        settings = self.settings_class(self.source)
+        if combine:
+            self._remember(settings, combine)
+            return combine
+        return self._forget(settings)
 
-    def get_active_asset(self) -> Optional[AssetModel]:
-        return self._asset('/api/asset/active')
+    def _remember(
+        self, settings: JbSettingsABC[JbSourceT, JbContainerT], containers: list[JbContainerT]
+    ) -> None:
+        """Push a selection onto the history, ignoring a repeat of the newest entry."""
+        entries = settings.load_solo()
+        if entries and set(entries[0]) == set(containers):
+            return
+        settings.save_solo([containers, *entries][: self.history_size])
 
-    def get_asset_by_search(self, search_key: str) -> Optional[AssetModel]:
-        return self._asset('/api/asset', {'searchKey': search_key}, 'POST')
+    def _forget(self, settings: JbSettingsABC[JbSourceT, JbContainerT]) -> list[JbContainerT]:
+        """Drop the newest entry and return the one before it."""
+        entries = settings.load_solo()
+        if len(entries) < 2:
+            return []
+        settings.save_solo(entries[1:])
+        return entries[1]
 
-    def get_asset(self, asset: AssetModel) -> Optional[AssetModel]:
-        return self._asset('/api/asset', asset.to_dict(), 'POST')
-
-    def create_asset(self, asset: AssetModel) -> Optional[AssetModel]:
-        return self._asset('/api/asset/create', asset.to_dict(), 'POST', 300)
-
-    def update_asset(self, asset: AssetModel) -> Optional[AssetModel]:
-        return self._asset('/api/asset/update', asset.to_dict(), 'POST', 30)
+    @abstractmethod
+    def _apply_solo(self, containers: list[JbContainerT]) -> None:
+        """Show the given containers and hide everything else."""
 
 
 # --- jiko_bridge_client ---
@@ -611,10 +865,15 @@ class JbObject:
 
 JbData: TypeAlias = JbContainer | JbObject | JbMaterial
 JbSceneBase: TypeAlias = JbSceneABC[JbSource, JbMatrix, JbContainer, JbObject, JbMaterial]
-JbAssetImporterBase: TypeAlias = JbAssetImporterABC[JbContainer, JbObject, JbMaterial]
-JbAssetExporterBase: TypeAlias = JbAssetExporterABC[JbContainer, JbObject, JbMaterial]
-JbMaterialImporterBase: TypeAlias = JbMaterialImporterABC[JbMaterial]
-JbSettingsBase: TypeAlias = JbSettingsABC[JbContainer]
+JbAssetImporterBase: TypeAlias = JbAssetImporterABC[
+    JbSource, JbMatrix, JbContainer, JbObject, JbMaterial
+]
+JbAssetExporterBase: TypeAlias = JbAssetExporterABC[
+    JbSource, JbMatrix, JbContainer, JbObject, JbMaterial
+]
+JbAssetSoloBase: TypeAlias = JbAssetSoloABC[JbSource, JbMatrix, JbContainer, JbObject, JbMaterial]
+JbMaterialImporterBase: TypeAlias = JbMaterialImporterABC[JbSource, JbMaterial]
+JbSettingsBase: TypeAlias = JbSettingsABC[JbSource, JbContainer]
 USD_EXTENSIONS = ('.usd', '.usda', '.usdc', '.usdz')
 CONVERTED_EXTENSIONS = ('.fbx', '.abc')
 MODEL_EXTENSIONS = CONVERTED_EXTENSIONS + USD_EXTENSIONS
@@ -628,37 +887,30 @@ class Placeholder(TypedDict):
     transform: Optional[List[float]]
 
 
-# --- jiko_bridge_houdini.commands.jb_asset_exporter ---
+# --- jiko_bridge_houdini.jb_settings ---
 
 # Deferred Houdini features implementing the shared contract.
 
 
-class JbAssetExporter(JbAssetExporterBase):
+class JbSettings(JbSettingsBase):
     """Placeholder until this feature is implemented for Houdini."""
 
     def __init__(self, source: JbSource):
         self.source = source
-        self.logger = get_logger('jiko_bridge_houdini.commands.jb_asset_exporter')
+        self.logger = get_logger('jiko_bridge_houdini.jb_settings')
 
-    def export_asset(self):
+    def get_export_format(self):
         """Reserved by the common DCC interface."""
-        self.logger.warning('Houdini JbAssetExporter.export_asset is not implemented.')
+        self.logger.warning('Houdini JbSettings.get_export_format is not implemented.')
 
-    def export_message(self):
+    def load_solo(self) -> list[list]:
         """Reserved by the common DCC interface."""
-        self.logger.warning('Houdini JbAssetExporter.export_message is not implemented.')
+        self.logger.warning('Houdini JbSettings.load_solo is not implemented.')
+        return []
 
-    def _collect_data(self):
+    def save_solo(self, _entries) -> None:
         """Reserved by the common DCC interface."""
-        self.logger.warning('Houdini JbAssetExporter._collect_data is not implemented.')
-
-    def _update_asset(self, container):
-        """Reserved by the common DCC interface."""
-        self.logger.warning('Houdini JbAssetExporter._update_asset is not implemented.')
-
-    def _create_new_asset(self, objects):
-        """Reserved by the common DCC interface."""
-        self.logger.warning('Houdini JbAssetExporter._create_new_asset is not implemented.')
+        self.logger.warning('Houdini JbSettings.save_solo is not implemented.')
 
 
 # --- jiko_bridge_houdini.jb_utils ---
@@ -871,34 +1123,6 @@ def source_path(path: str | None) -> str:
     return hou.text.expandString(path or '').replace('\\', '/')
 
 
-# --- jiko_bridge_houdini.materials.jb_material_importer ---
-
-# Deferred Houdini features implementing the shared contract.
-
-
-class JbMaterialImporter(JbMaterialImporterBase):
-    """Placeholder until this feature is implemented for Houdini."""
-
-    def __init__(self, source: JbSource):
-        self.source = source
-        self.logger = get_logger('jiko_bridge_houdini.materials.jb_material_importer')
-
-    def get_material_name(self, material):
-        """Reserved by the common DCC interface."""
-        self.logger.warning('Houdini JbMaterialImporter.get_material_name is not implemented.')
-        pass
-
-    def set_material_name(self, material, name):
-        """Reserved by the common DCC interface."""
-        self.logger.warning('Houdini JbMaterialImporter.set_material_name is not implemented.')
-        pass
-
-    def import_material(self, asset, file):
-        """Reserved by the common DCC interface."""
-        self.logger.warning('Houdini JbMaterialImporter.import_material is not implemented.')
-        pass
-
-
 # --- jiko_bridge_houdini.jb_vex ---
 
 # The VEX layer: every program the asset runs on geometry, and the runner.
@@ -906,8 +1130,16 @@ class JbMaterialImporter(JbMaterialImporterBase):
 VEX_FILES = '$HOUDINI_TEMP_DIR/jiko/jiko_bridge'
 VEX_RUN_OVER = {'detail': 0, 'prim': 1, 'point': 2, 'vertex': 3, 'number': 4}
 PLACEHOLDER_GROUP = 'jiko_placeholders'
-FBX_VEX = '\nstring names[] = {};\nmatrix transform;\nif (jb_fbx_extract_placeholder(0, @primnum, names, transform)) {\n    s[]@jiko_names = names;\n    4@jiko_transform = transform;\n    @group_jiko_placeholders = 1;\n}\n'
-ABC_VEX = '\nstring names[] = {};\nmatrix transform;\nif (jb_abc_extract_placeholder(0, @primnum, names, transform)) {\n    s[]@jiko_names = names;\n    4@jiko_transform = transform;\n    @group_jiko_placeholders = 1;\n}\n'
+_PLACEHOLDER_VEX = '\nstring names[] = {};\nmatrix transform;\nif (JB_EXTRACT(0, @primnum, names, transform)) {\n    s[]@jiko_names = names;\n    4@jiko_transform = transform;\n    @group_jiko_placeholders = 1;\n}\n'
+
+
+def marker_vex(extract_function: str) -> str:
+    """VEX marker that collects placeholders through an embedded library call."""
+    return _PLACEHOLDER_VEX.replace('JB_EXTRACT', extract_function)
+
+
+FBX_VEX = marker_vex('jb_fbx_extract_placeholder')
+ABC_VEX = marker_vex('jb_abc_extract_placeholder')
 
 
 def vex_snippet(body: str, library: str = 'lib.vfl') -> str:
@@ -925,8 +1157,6 @@ def run_vex(geometry: hou.Geometry, body: str, run_over: str = 'point') -> hou.G
 
 
 # --- jiko_bridge_houdini.scene.jb_scene_graph ---
-
-# Import the files of a Jiko Bridge asset, one branch per bridge type.
 
 
 class JbSceneGraph:
@@ -987,8 +1217,6 @@ class JbSceneGraph:
 
 # --- jiko_bridge_houdini.scene.jb_scene_objects ---
 
-# Rebuild the packed sources with the replaced objects taken out of them.
-
 
 def clean_geometry(geometry: hou.Geometry, remove_objects: list[str]) -> hou.Geometry:
     """Rebuild only affected packed branches, preserving their placement."""
@@ -1025,6 +1253,7 @@ def clean_geometry(geometry: hou.Geometry, remove_objects: list[str]) -> hou.Geo
 
 
 def prepare_geometry(sop: hou.SopNode) -> None:
+    """Build one packed geometry per discovered asset model."""
     input_node = sop.inputs()[0]
     if input_node is None:
         raise hou.NodeError('Connect the graph SOP to this node.')
@@ -1092,11 +1321,9 @@ class JbSceneObjects(JbSceneBase):
 
     def get_materials_from_objects(self, objects):
         self.logger.warning('Houdini material selection is not implemented.')
-        pass
 
     def merge_duplicates_materials(self, material):
         self.logger.warning('Houdini material merging is not implemented.')
-        pass
 
 
 # --- jiko_bridge_houdini.scene.jb_scene_container ---
@@ -1198,8 +1425,6 @@ class JbSceneContainer(JbSceneObjects):
 
 # --- jiko_bridge_houdini.scene.jb_scene_instance ---
 
-# Read the placeholder objects of a source file, one reader per format.
-
 MARKERS = {'.abc': ABC_VEX, '.fbx': FBX_VEX}
 
 
@@ -1220,6 +1445,7 @@ def sop_placeholders(geometry: hou.Geometry, extension: str) -> Iterator[Placeho
 
 
 def usd_placeholders(path: str) -> Iterator[Placeholder]:
+    """Read square placeholder prims from a USD asset file."""
     stage = Usd.Stage.Open(path)
     if stage is None:
         raise hou.NodeError(f'Cannot open USD asset: {path}')
@@ -1265,8 +1491,9 @@ def plan_instances(graph: dict[str, Any]) -> None:
                     and all((math.isfinite(value) for value in matrix))
                 )
                 if not valid:
+                    label = asset['asset'].get('assetName') or asset['id']
                     graph['warnings'].append(
-                        f"No exact transform for {location} in {asset['asset'].get('assetName') or asset['id']}; placeholder retained."
+                        f'No exact transform for {location} in {label}; placeholder retained.'
                     )
                 ready = ready and valid and (not instance['cycle'])
             for instance in instances:
@@ -1276,6 +1503,7 @@ def plan_instances(graph: dict[str, Any]) -> None:
 
 
 def instance_points(sop: hou.SopNode) -> None:
+    """Write one point per replaceable instance into the output SOP."""
     input_node = sop.inputs()[0]
     if input_node is None:
         raise hou.NodeError('Connect the graph SOP to this node.')
@@ -1316,11 +1544,9 @@ class JbSceneInstance(JbSceneContainer):
 
     def replace_instances_with_placeholders(self, objects, source):
         self.logger.warning('Houdini placeholder export is not implemented.')
-        pass
 
     def create_placeholder(self, asset_model, transform, source):
         self.logger.warning('Houdini placeholder export is not implemented.')
-        pass
 
 
 # --- jiko_bridge_houdini.scene.jb_scene_temp ---
@@ -1336,7 +1562,6 @@ class JbSceneTemp(JbSceneInstance):
 
 # --- jiko_bridge_houdini.scene.jb_scene_file ---
 
-"""Read FBX file units without loading meshes or requiring the FBX SDK."""
 CM_TO_METERS = 0.01
 DEFAULT_UNIT_SCALE_FACTOR = 1.0
 DEFAULT_METERS_PER_UNIT = DEFAULT_UNIT_SCALE_FACTOR * CM_TO_METERS
@@ -1461,13 +1686,11 @@ class JbSceneFile(JbSceneTemp):
     def _import_fbx(self, file_path: str) -> bool:
         return self.import_file(file_path)
 
-    def export_file(self, ext):
+    def export_file(self, _ext):
         self.logger.warning('Houdini file export is not implemented.')
-        pass
 
-    def _export_fbx(self, file_path):
+    def _export_fbx(self, _file_path):
         self.logger.warning('Houdini FBX export is not implemented.')
-        pass
 
     def _import_model(self, record: dict[str, Any], entry: dict[str, Any]) -> Sequence[Placeholder]:
         """Import one model file: read its placeholders and pack its geometry."""
@@ -1548,9 +1771,8 @@ class JbScene(JbSceneFile):
         finally:
             self._import_target = previous
 
-    def export_with_temp(self, src, ext):
+    def export_with_temp(self, _src, _ext):
         self.logger.warning('Houdini asset export is not implemented.')
-        pass
 
     def get_project_filepath(self) -> str | None:
         return hou.hipFile.path()
@@ -1560,11 +1782,13 @@ class JbScene(JbSceneFile):
         return apply_asset(self.source, asset)
 
     def refresh(self) -> None:
+        """Force the discovery SOP to cook so the graph picks up changes."""
         scan = self.source.node('geometry/discover_assets')
         if scan is not None:
             scan.cook(force=True)
 
     def graph_data(self, roots: list[JbContainer]) -> dict[str, Any]:
+        """Serialize the asset graph for the geometry SOPs."""
         return {
             'version': 1,
             'roots': [c.record['id'] for c in roots if c.record['models']],
@@ -1572,9 +1796,62 @@ class JbScene(JbSceneFile):
             'warnings': self.graph.warnings,
         }
 
-    def solo(self):
-        self.logger.warning('Houdini solo mode is not implemented.')
-        pass
+
+# --- jiko_bridge_houdini.commands.jb_asset_exporter ---
+
+# Deferred Houdini features implementing the shared contract.
+
+
+class JbAssetExporter(JbAssetExporterBase):
+    """Placeholder until this feature is implemented for Houdini."""
+
+    scene_class = JbScene
+    settings_class = JbSettings
+
+    def export_asset(self):
+        """Reserved by the common DCC interface."""
+        self.logger.warning('Houdini JbAssetExporter.export_asset is not implemented.')
+
+    def export_message(self):
+        """Reserved by the common DCC interface."""
+        self.logger.warning('Houdini JbAssetExporter.export_message is not implemented.')
+
+    def _collect_data(self):
+        """Reserved by the common DCC interface."""
+        self.logger.warning('Houdini JbAssetExporter._collect_data is not implemented.')
+
+    def _update_asset(self, container):
+        """Reserved by the common DCC interface."""
+        self.logger.warning('Houdini JbAssetExporter._update_asset is not implemented.')
+
+    def _create_new_asset(self, objects):
+        """Reserved by the common DCC interface."""
+        self.logger.warning('Houdini JbAssetExporter._create_new_asset is not implemented.')
+
+
+# --- jiko_bridge_houdini.materials.jb_material_importer ---
+
+# Deferred Houdini features implementing the shared contract.
+
+
+class JbMaterialImporter(JbMaterialImporterBase):
+    """Placeholder until this feature is implemented for Houdini."""
+
+    def __init__(self, source: JbSource):
+        self.source = source
+        self.logger = get_logger('jiko_bridge_houdini.materials.jb_material_importer')
+
+    def get_material_name(self, _material):
+        """Reserved by the common DCC interface."""
+        self.logger.warning('Houdini JbMaterialImporter.get_material_name is not implemented.')
+
+    def set_material_name(self, _material, _name):
+        """Reserved by the common DCC interface."""
+        self.logger.warning('Houdini JbMaterialImporter.set_material_name is not implemented.')
+
+    def import_material(self, _asset, _file):
+        """Reserved by the common DCC interface."""
+        self.logger.warning('Houdini JbMaterialImporter.import_material is not implemented.')
 
 
 # --- jiko_bridge_houdini.commands.jb_asset_importer ---
@@ -1587,11 +1864,12 @@ asset_import_logger = get_logger('jiko_bridge_houdini.commands.jb_asset_importer
 class JbAssetImporter(JbAssetImporterBase):
     """Use the same selection, lookup and instance rules as other DCC plugins."""
 
+    scene: JbScene
+    scene_class = JbScene
+    materials_class = JbMaterialImporter
+
     def __init__(self, source: JbSource):
-        self.api = JbAPI()
-        self.scene = JbScene(source)
-        self.materials = JbMaterialImporter(source)
-        self._asset_cache: dict[str, AssetModel | None] = {}
+        super().__init__(source)
         self._visited: set[str] = set()
 
     def import_assets(self) -> None:
@@ -1601,32 +1879,15 @@ class JbAssetImporter(JbAssetImporterBase):
                 self.scene.refresh()
                 asset_import_logger.info('Imported asset %s', asset.asset_name)
 
-    def import_message(self) -> str:
-        _, containers = self._collect_data()
-        if containers:
-            return f'Import assets for asset containers?\n{len(containers)} asset container(s) found in selection.'
-        return 'Import active asset from Jiko Bridge.'
-
     def _collect_data(self) -> tuple[list[JbMaterial], list[JbContainer]]:
         return ([], self.scene.get_containers_from_objects(self.scene.get_selection()))
 
-    def _collect_assets(self) -> list[AssetModel]:
-        assets = []
-        _, containers = self._collect_data()
-        if containers:
-            for container in containers:
-                query = self.scene.get_asset_data_from_container(container)
-                if query is None:
-                    continue
-                query.active_type = None
-                asset = self.api.get_asset(query)
-                if asset:
-                    assets.append(asset)
-        else:
-            asset = self.api.get_active_asset()
-            if asset:
-                assets.append(asset)
-        return assets
+    def _asset_from_container(self, container: JbContainer) -> AssetModel | None:
+        query = self.scene.get_asset_data_from_container(container)
+        if query is None:
+            return None
+        query.active_type = None
+        return self.api.get_asset(query)
 
     def _import_single(self, asset: AssetModel) -> None:
         containers = []
@@ -1679,14 +1940,6 @@ class JbAssetImporter(JbAssetImporterBase):
                     )
             self.scene.cleanup_container(current)
 
-    def _resolve_asset(self, name: str) -> AssetModel | None:
-        if name in self._asset_cache:
-            return self._asset_cache[name]
-        query = AssetModel.from_string(name)
-        asset = self.api.get_asset(query) if query else self.api.get_asset_by_search(name)
-        self._asset_cache[name] = asset
-        return asset
-
     def _resolve_placeholder(self, obj, container, asset_model) -> JbContainer | None:
         target = self.scene.get_container(asset_model)
         if target is None or not target.record['models']:
@@ -1712,6 +1965,22 @@ class JbAssetImporter(JbAssetImporterBase):
         return self.scene.graph_data([root] if root else [])
 
 
+# --- jiko_bridge_houdini.commands.jb_asset_solo ---
+
+# Deferred Houdini features implementing the shared contract.
+
+
+class JbAssetSolo(JbAssetSoloBase):
+    """Placeholder until this feature is implemented for Houdini."""
+
+    scene: JbScene
+    scene_class = JbScene
+    settings_class = JbSettings
+
+    def _apply_solo(self, _containers: list[JbContainer]) -> None:
+        self.logger.warning('Houdini solo mode is not implemented.')
+
+
 # --- jiko_bridge_houdini.jb_commands ---
 
 # Commands shared by HDA callbacks and scripted use.
@@ -1723,7 +1992,7 @@ class JbCommands:
     def __init__(self, source: JbSource):
         self.asset_import = JbAssetImporter(source)
         self.asset_export = JbAssetExporter(source)
-        self.scene = self.asset_import.scene
+        self.asset_solo = JbAssetSolo(source)
 
     def import_asset(self) -> None:
         """Import the container asset, or the active asset for an empty HDA."""
@@ -1748,7 +2017,7 @@ class JbCommands:
 
     def solo(self) -> None:
         """Invoke the solo placeholder."""
-        self.scene.solo()
+        self.asset_solo.solo()
 
 
 # --- jiko_bridge_houdini.jb_plugin ---
@@ -1790,39 +2059,6 @@ def import_asset(node: hou.OpNode) -> None:
     JbCommands(node).import_asset()
 
 
-# --- jiko_bridge_houdini.jb_settings ---
-
-# Deferred Houdini features implementing the shared contract.
-
-
-class JbSettings(JbSettingsBase):
-    """Placeholder until this feature is implemented for Houdini."""
-
-    def __init__(self, source: JbSource):
-        self.source = source
-        self.logger = get_logger('jiko_bridge_houdini.jb_settings')
-
-    def get_export_format(self):
-        """Reserved by the common DCC interface."""
-        self.logger.warning('Houdini JbSettings.get_export_format is not implemented.')
-        pass
-
-    def load_solo_stack(self):
-        """Reserved by the common DCC interface."""
-        self.logger.warning('Houdini JbSettings.load_solo_stack is not implemented.')
-        pass
-
-    def save_solo_selection(self, containers):
-        """Reserved by the common DCC interface."""
-        self.logger.warning('Houdini JbSettings.save_solo_selection is not implemented.')
-        pass
-
-    def pop_solo_selection(self):
-        """Reserved by the common DCC interface."""
-        self.logger.warning('Houdini JbSettings.pop_solo_selection is not implemented.')
-        pass
-
-
 # --- jiko_bridge_houdini.scene.jb_scene_layer_plan ---
 
 # Map discovered models to USD prims and cache files without writing to disk.
@@ -1832,6 +2068,7 @@ GEOMETRY_PRIM = 'geometry'
 
 
 def cache_file(cache_root: str, metadata: dict[str, Any]) -> str:
+    """Cache path of one asset, validated against invalid name characters."""
     if not cache_root:
         raise hou.NodeError('Set Cache Path before assembling USD layers.')
     names = []
@@ -1868,6 +2105,44 @@ def prototype_path(record: dict[str, Any]) -> str:
     return f'/__JikoPrototypes/{Tf.MakeValidIdentifier(name)}_{digest}'
 
 
+def asset_entry(cache_root: str, record: dict[str, Any]) -> dict[str, Any] | None:
+    """Asset entry of one record, or None when the record holds no models."""
+    models: list[dict] = []
+    for entry in record['models']:
+        converted = entry['format'] in CONVERTED_EXTENSIONS
+        models.append(
+            {
+                'id': entry['id'],
+                'record': record,
+                'source': entry['source'],
+                'format': entry['format'],
+                'converted': converted,
+                'file': (
+                    cache_file(cache_root, record['asset'])
+                    if converted
+                    else os.path.abspath(entry['source']).replace('\\', '/')
+                ),
+                'prim': model_prim_path(entry['source']),
+            }
+        )
+    if not models:
+        return None
+    formats = {model['converted'] for model in models}
+    if len(formats) > 1:
+        raise hou.NodeError(
+            'An asset mixes converted and USD model files: '
+            + ', '.join((model['source'] for model in models))
+        )
+    return {
+        'id': record['id'],
+        'record': record,
+        'converted': formats.pop(),
+        'root': f'/{CACHE_ROOT_PRIM}',
+        'prototype': prototype_path(record),
+        'models': models,
+    }
+
+
 def layer_plan(owner: hou.OpNode, graph: dict[str, Any]) -> dict[str, Any]:
     """Turn the asset graph into cache layers and one container per asset."""
     cache_root = absolute_path(str(owner.evalParm('cache_path')))
@@ -1883,53 +2158,22 @@ def layer_plan(owner: hou.OpNode, graph: dict[str, Any]) -> dict[str, Any]:
         return {'mode': 'cached', 'path': path, 'assets': {}, 'layers': []}
     assets: dict[str, dict] = {}
     layers: dict[str, dict] = {}
-    paths: dict[str, tuple] = {}
+    identities: dict[str, tuple] = {}
     for record in graph['assets']:
-        models: list[dict] = []
-        for entry in record['models']:
-            converted = entry['format'] in CONVERTED_EXTENSIONS
-            models.append(
-                {
-                    'id': entry['id'],
-                    'record': record,
-                    'source': entry['source'],
-                    'format': entry['format'],
-                    'converted': converted,
-                    'file': (
-                        cache_file(cache_root, record['asset'])
-                        if converted
-                        else os.path.abspath(entry['source']).replace('\\', '/')
-                    ),
-                    'prim': model_prim_path(entry['source']),
-                }
-            )
-        if not models:
+        asset = asset_entry(cache_root, record)
+        if asset is None:
             continue
-        formats = {model['converted'] for model in models}
-        if len(formats) > 1:
-            raise hou.NodeError(
-                'An asset mixes converted and USD model files: '
-                + ', '.join((model['source'] for model in models))
-            )
-        asset = {
-            'id': record['id'],
-            'record': record,
-            'converted': formats.pop(),
-            'root': f'/{CACHE_ROOT_PRIM}',
-            'prototype': prototype_path(record),
-            'models': models,
-        }
         assets[record['id']] = asset
         if not asset['converted']:
             continue
-        path = models[0]['file']
+        path = asset['models'][0]['file']
         key = os.path.normcase(os.path.abspath(path))
         identity = tuple(
             (record['asset'].get(name) for name in ('vaultName', 'packName', 'assetName'))
         )
-        if key in paths and paths[key] != identity:
+        if key in identities and identities[key] != identity:
             raise hou.NodeError(f'Different assets resolve to the same cache file: {path}')
-        paths[key] = identity
+        identities[key] = identity
         layer = layers.setdefault(
             key,
             {
@@ -1940,7 +2184,7 @@ def layer_plan(owner: hou.OpNode, graph: dict[str, Any]) -> dict[str, Any]:
                 'models': [],
             },
         )
-        layer['models'].extend(models)
+        layer['models'].extend(asset['models'])
     sources = {
         os.path.normcase(os.path.abspath(model['file']))
         for asset in assets.values()
@@ -1967,6 +2211,7 @@ def _cache_root(owner: hou.OpNode) -> str:
 
 
 def scene_output_path(owner: hou.OpNode) -> str:
+    """Path of the assembled scene USD for the selected asset."""
     if not owner.evalParm('asset_name'):
         return ''
     metadata = {
@@ -1979,6 +2224,7 @@ def scene_output_path(owner: hou.OpNode) -> str:
 
 
 def cache_save_pattern(owner: hou.OpNode) -> str:
+    """Glob pattern matching every cached asset file."""
     return '"' + _cache_root(owner).rstrip('/') + '/*"'
 
 
@@ -1994,6 +2240,7 @@ def _inside_cache(path: str, root: str) -> bool:
 
 
 def save_usd(owner: hou.OpNode) -> str:
+    """Assemble the stage and write it through the HDA's USD ROP."""
     output = scene_output_path(owner)
     if not output or (not owner.evalParm('cached') and (not cached_asset(owner).files)):
         raise hou.Error('Select an asset before saving USD.')
@@ -2136,7 +2383,7 @@ class LayerAssembly:
                 for model in item['models']:
                     if not stage.GetPrimAtPath(model['prim']):
                         raise hou.NodeError(
-                            f"Cache schema differs for {item['path']}. Enable Override to rebuild it."
+                            f"Cache schema differs for {item['path']}; rebuild with Override."
                         )
                 self.asset_layers[item['asset_id']] = item['path']
                 continue
@@ -2156,6 +2403,7 @@ class LayerAssembly:
             self.stages[item['path']] = stage
 
     def copy_geometry(self, stage: Usd.Stage, model: dict[str, Any]) -> None:
+        """Convert one prepared model to USD and copy it into the cache layer."""
         primitive = next(
             (
                 prim
@@ -2187,6 +2435,7 @@ class LayerAssembly:
         _copy_geometry_roots(flattened, destination, parent)
 
     def usd_source(self, path: str) -> Usd.Stage:
+        """Open a USD source file once and reuse the stage."""
         if path not in self.usd_sources:
             stage = Usd.Stage.Open(path)
             if stage is None:
@@ -2245,6 +2494,7 @@ class LayerAssembly:
     def instances(
         self, stage: Usd.Stage, parent: str, record: dict[str, Any], ancestors: tuple[str, ...] = ()
     ) -> None:
+        """Author one instanced reference per replaced placeholder."""
         for index, instance in enumerate(record['instances']):
             if not instance.get('replace'):
                 continue
@@ -2255,6 +2505,7 @@ class LayerAssembly:
             _set_instance_transform(prim, instance['transform'])
 
     def author(self) -> None:
+        """Fill every newly created cache layer with geometry and instances."""
         self.allocate()
         for item in self.plan['layers']:
             if item['reuse']:
@@ -2267,6 +2518,7 @@ class LayerAssembly:
 
 
 def assemble_usd(node: hou.LopNode) -> None:
+    """Python LOP entry point: assemble the whole stage on cook."""
     owner = cast(hou.OpNode, node.parent())
     graph: dict[str, Any] = {'mode': 'cached'}
     geometry = None

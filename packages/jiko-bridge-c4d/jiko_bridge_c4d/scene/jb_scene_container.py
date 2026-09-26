@@ -63,27 +63,17 @@ class JbSceneContainer(JbSceneObjects):
             self._set_user_data(container, "assetType", file.asset_type)
 
     def get_asset_data_from_container(self, container) -> Optional[AssetModel]:
-        pack_name = asset_name = asset_type = vault_name = None
+        fields: dict = {}
 
         for key, bc in container.GetUserDataContainer() or []:
-            bc_name = bc[c4d.DESC_NAME]
-            if bc_name == "packName":
-                pack_name = container[key]
-            elif bc_name == "assetName":
-                asset_name = container[key]
-            elif bc_name == "assetType":
-                asset_type = container[key] or None
-            elif bc_name == "vaultName":
-                vault_name = container[key] or None
+            name = bc[c4d.DESC_NAME]
+            fields[name] = (container[key] or None) if name == "assetType" else container[key]
 
-        if not (pack_name and asset_name):
-            return None
-
-        return AssetModel(
-            pack_name=pack_name,
-            asset_name=asset_name,
-            active_type=asset_type,
-            vault_name=vault_name,
+        return AssetModel.from_container_fields(
+            fields.get("packName"),
+            fields.get("assetName"),
+            fields.get("assetType"),
+            fields.get("vaultName"),
         )
 
     def copy_asset_data(self, src, dst) -> None:

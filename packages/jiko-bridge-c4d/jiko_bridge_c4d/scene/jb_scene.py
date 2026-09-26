@@ -3,7 +3,6 @@ from logging import Logger
 from typing import Optional
 
 import c4d
-from jiko_bridge_c4d.jb_settings import JbSettings
 from jiko_bridge_c4d.jb_types import JbSource
 from jiko_bridge_c4d.scene.jb_scene_file import JbSceneFile
 from jiko_bridge_client import get_logger
@@ -66,33 +65,3 @@ class JbScene(JbSceneFile):
 
         self.logger.warning("Please save the project before exporting.")
         return None
-
-    def solo(self):
-        objects = self.get_selection()
-
-        instances = self.get_containers_from_instances(objects)
-        containers = self.get_containers_from_objects(objects)
-
-        combine = instances + containers
-
-        settings = JbSettings(self.source)
-
-        if not combine:
-            combine = settings.pop_solo_selection()
-        else:
-            settings.save_solo_selection(combine)
-
-        if not combine:
-            return
-
-        root, _ = self.get_or_create_container("Assets")
-
-        self._set_visibility(root, 1)
-
-        for child in root.GetChildren():
-            self._set_visibility(child, 2)
-
-        for obj in combine:
-            self._set_visibility(obj, 0)
-
-        c4d.CallCommand(12288)

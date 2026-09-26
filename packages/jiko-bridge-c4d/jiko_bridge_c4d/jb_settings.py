@@ -15,8 +15,8 @@ class JbSettings(JbSettingsBase):
     """Manages plugin settings stored inside the C4D document."""
 
     _SETTINGS_ID = 1096087
-    _SOLO_STACK_ID = 1057892
-    _SOLO_STACK_SIZE = 10
+    _SOLO_ID = 1057892
+    _MAX_SOLO_SLOTS = 10
 
     _SETTING_EXPORT_FORMAT = 1057234
 
@@ -50,47 +50,22 @@ class JbSettings(JbSettingsBase):
         bc.SetInt32(self._SETTING_EXPORT_FORMAT, index)
         self._save_container(bc)
 
-    def load_solo_stack(self) -> list[list]:
+    def load_solo(self) -> list[list]:
         """Return the stored solo selections, newest first."""
-        root_bc = self._doc.GetDataInstance().GetContainer(self._SOLO_STACK_ID)
+        root_bc = self._doc.GetDataInstance().GetContainer(self._SOLO_ID)
         return [
             self._bc_to_entry(root_bc.GetContainer(i))
-            for i in range(self._SOLO_STACK_SIZE)
+            for i in range(self._MAX_SOLO_SLOTS)
             if root_bc.FindIndex(i) != -1
         ]
 
-    def save_solo_selection(self, containers) -> None:
-        """Push a solo selection onto the stored stack."""
-        stack = self.load_solo_stack()
-
-        if stack:
-            previous_selection = stack[0]
-            if set(containers) == set(previous_selection):
-                return
-
-        stack.insert(0, containers)
-        stack = stack[: self._SOLO_STACK_SIZE]
-
+    def save_solo(self, entries: list[list]) -> None:
+        """Replace the stored solo selections with the given entries, newest first."""
         root_bc = c4d.BaseContainer()
-        for i, entry in enumerate(stack):
+        for i, entry in enumerate(entries):
             root_bc.SetContainer(i, self._entry_to_bc(entry))
 
-        self._doc.GetDataInstance().SetContainer(self._SOLO_STACK_ID, root_bc)
-
-    def pop_solo_selection(self) -> list:
-        """Return the previous solo selection and drop it from the stack."""
-        stack = self.load_solo_stack()
-        if len(stack) < 2:
-            return []
-
-        _, previous, *rest = stack
-
-        root_bc = c4d.BaseContainer()
-        for i, entry in enumerate([previous] + rest):
-            root_bc.SetContainer(i, self._entry_to_bc(entry))
-        self._doc.GetDataInstance().SetContainer(self._SOLO_STACK_ID, root_bc)
-
-        return previous
+        self._doc.GetDataInstance().SetContainer(self._SOLO_ID, root_bc)
 
 
 # pylint: disable=invalid-name, missing-function-docstring

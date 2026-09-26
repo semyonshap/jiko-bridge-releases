@@ -142,7 +142,8 @@ class JbSceneObjects(JbSceneBase):
                 return result
         return None
 
-    def _set_collection_visibility(self, collection, visible: bool) -> None:
+    def set_container_visibility(self, collection, visible: bool) -> None:
+        """Show or hide a collection in the viewport."""
         view_layer = self.source.view_layer
         if not view_layer:
             return

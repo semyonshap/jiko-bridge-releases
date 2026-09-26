@@ -15,6 +15,7 @@ GEOMETRY_PRIM = "geometry"
 
 
 def cache_file(cache_root: str, metadata: dict[str, Any]) -> str:
+    """Cache path of one asset, validated against invalid name characters."""
     if not cache_root:
         raise hou.NodeError("Set Cache Path before assembling USD layers.")
     names = []
@@ -51,6 +52,44 @@ def prototype_path(record: dict[str, Any]) -> str:
     return f"/__JikoPrototypes/{Tf.MakeValidIdentifier(name)}_{digest}"
 
 
+def asset_entry(cache_root: str, record: dict[str, Any]) -> dict[str, Any] | None:
+    """Asset entry of one record, or None when the record holds no models."""
+    models: list[dict] = []
+    for entry in record["models"]:
+        converted = entry["format"] in CONVERTED_EXTENSIONS
+        models.append(
+            {
+                "id": entry["id"],
+                "record": record,
+                "source": entry["source"],
+                "format": entry["format"],
+                "converted": converted,
+                "file": (
+                    cache_file(cache_root, record["asset"])
+                    if converted
+                    else os.path.abspath(entry["source"]).replace("\\", "/")
+                ),
+                "prim": model_prim_path(entry["source"]),
+            }
+        )
+    if not models:
+        return None
+    formats = {model["converted"] for model in models}
+    if len(formats) > 1:
+        raise hou.NodeError(
+            "An asset mixes converted and USD model files: "
+            + ", ".join((model["source"] for model in models))
+        )
+    return {
+        "id": record["id"],
+        "record": record,
+        "converted": formats.pop(),
+        "root": f"/{CACHE_ROOT_PRIM}",
+        "prototype": prototype_path(record),
+        "models": models,
+    }
+
+
 def layer_plan(owner: hou.OpNode, graph: dict[str, Any]) -> dict[str, Any]:
     """Turn the asset graph into cache layers and one container per asset."""
     cache_root = absolute_path(str(owner.evalParm("cache_path")))
@@ -66,53 +105,22 @@ def layer_plan(owner: hou.OpNode, graph: dict[str, Any]) -> dict[str, Any]:
         return {"mode": "cached", "path": path, "assets": {}, "layers": []}
     assets: dict[str, dict] = {}
     layers: dict[str, dict] = {}
-    paths: dict[str, tuple] = {}
+    identities: dict[str, tuple] = {}
     for record in graph["assets"]:
-        models: list[dict] = []
-        for entry in record["models"]:
-            converted = entry["format"] in CONVERTED_EXTENSIONS
-            models.append(
-                {
-                    "id": entry["id"],
-                    "record": record,
-                    "source": entry["source"],
-                    "format": entry["format"],
-                    "converted": converted,
-                    "file": (
-                        cache_file(cache_root, record["asset"])
-                        if converted
-                        else os.path.abspath(entry["source"]).replace("\\", "/")
-                    ),
-                    "prim": model_prim_path(entry["source"]),
-                }
-            )
-        if not models:
+        asset = asset_entry(cache_root, record)
+        if asset is None:
             continue
-        formats = {model["converted"] for model in models}
-        if len(formats) > 1:
-            raise hou.NodeError(
-                "An asset mixes converted and USD model files: "
-                + ", ".join((model["source"] for model in models))
-            )
-        asset = {
-            "id": record["id"],
-            "record": record,
-            "converted": formats.pop(),
-            "root": f"/{CACHE_ROOT_PRIM}",
-            "prototype": prototype_path(record),
-            "models": models,
-        }
         assets[record["id"]] = asset
         if not asset["converted"]:
             continue
-        path = models[0]["file"]
+        path = asset["models"][0]["file"]
         key = os.path.normcase(os.path.abspath(path))
         identity = tuple(
             (record["asset"].get(name) for name in ("vaultName", "packName", "assetName"))
         )
-        if key in paths and paths[key] != identity:
+        if key in identities and identities[key] != identity:
             raise hou.NodeError(f"Different assets resolve to the same cache file: {path}")
-        paths[key] = identity
+        identities[key] = identity
         layer = layers.setdefault(
             key,
             {
@@ -123,7 +131,7 @@ def layer_plan(owner: hou.OpNode, graph: dict[str, Any]) -> dict[str, Any]:
                 "models": [],
             },
         )
-        layer["models"].extend(models)
+        layer["models"].extend(asset["models"])
     sources = {
         os.path.normcase(os.path.abspath(model["file"]))
         for asset in assets.values()

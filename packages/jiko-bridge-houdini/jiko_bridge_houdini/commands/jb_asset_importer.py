@@ -4,7 +4,7 @@ from collections import deque
 from typing import Any
 
 import hou
-from jiko_bridge_client import AssetFile, AssetModel, JbAPI, get_logger
+from jiko_bridge_client import AssetFile, AssetModel, get_logger
 from jiko_bridge_houdini.jb_types import (
     JbAssetImporterBase,
     JbContainer,
@@ -22,11 +22,12 @@ asset_import_logger = get_logger(__name__)
 class JbAssetImporter(JbAssetImporterBase):
     """Use the same selection, lookup and instance rules as other DCC plugins."""
 
+    scene: JbScene
+    scene_class = JbScene
+    materials_class = JbMaterialImporter
+
     def __init__(self, source: JbSource):
-        self.api = JbAPI()
-        self.scene = JbScene(source)
-        self.materials = JbMaterialImporter(source)
-        self._asset_cache: dict[str, AssetModel | None] = {}
+        super().__init__(source)
         self._visited: set[str] = set()
 
     def import_assets(self) -> None:
@@ -36,32 +37,15 @@ class JbAssetImporter(JbAssetImporterBase):
                 self.scene.refresh()
                 asset_import_logger.info("Imported asset %s", asset.asset_name)
 
-    def import_message(self) -> str:
-        _, containers = self._collect_data()
-        if containers:
-            return f"Import assets for asset containers?\n{len(containers)} asset container(s) found in selection."
-        return "Import active asset from Jiko Bridge."
-
     def _collect_data(self) -> tuple[list[JbMaterial], list[JbContainer]]:
         return ([], self.scene.get_containers_from_objects(self.scene.get_selection()))
 
-    def _collect_assets(self) -> list[AssetModel]:
-        assets = []
-        _, containers = self._collect_data()
-        if containers:
-            for container in containers:
-                query = self.scene.get_asset_data_from_container(container)
-                if query is None:
-                    continue
-                query.active_type = None
-                asset = self.api.get_asset(query)
-                if asset:
-                    assets.append(asset)
-        else:
-            asset = self.api.get_active_asset()
-            if asset:
-                assets.append(asset)
-        return assets
+    def _asset_from_container(self, container: JbContainer) -> AssetModel | None:
+        query = self.scene.get_asset_data_from_container(container)
+        if query is None:
+            return None
+        query.active_type = None
+        return self.api.get_asset(query)
 
     def _import_single(self, asset: AssetModel) -> None:
         containers = []
@@ -113,14 +97,6 @@ class JbAssetImporter(JbAssetImporterBase):
                         f"Unresolved placeholder {obj.data['object']} in {identifier}"
                     )
             self.scene.cleanup_container(current)
-
-    def _resolve_asset(self, name: str) -> AssetModel | None:
-        if name in self._asset_cache:
-            return self._asset_cache[name]
-        query = AssetModel.from_string(name)
-        asset = self.api.get_asset(query) if query else self.api.get_asset_by_search(name)
-        self._asset_cache[name] = asset
-        return asset
 
     def _resolve_placeholder(self, obj, container, asset_model) -> JbContainer | None:
         target = self.scene.get_container(asset_model)

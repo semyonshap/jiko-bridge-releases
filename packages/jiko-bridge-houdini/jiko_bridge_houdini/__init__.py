@@ -3,6 +3,7 @@
 from jiko_bridge_client import DEFAULT_PORT, AssetFile, AssetModel, JbAPI, get_logger
 from jiko_bridge_houdini.commands.jb_asset_exporter import JbAssetExporter
 from jiko_bridge_houdini.commands.jb_asset_importer import JbAssetImporter
+from jiko_bridge_houdini.commands.jb_asset_solo import JbAssetSolo
 from jiko_bridge_houdini.jb_commands import JbCommands
 from jiko_bridge_houdini.jb_plugin import active_asset, discover_assets, import_asset
 from jiko_bridge_houdini.jb_settings import JbSettings
@@ -19,6 +20,7 @@ from jiko_bridge_houdini.scene.jb_scene_usd import assemble_usd
 __version__ = "1.0.0"
 __all__ = [
     "JbAssetExporter",
+    "JbAssetSolo",
     "JbMaterialImporter",
     "JbSettings",
     "write_files",

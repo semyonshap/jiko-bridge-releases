@@ -2,6 +2,7 @@
 
 from jiko_bridge_houdini.commands.jb_asset_exporter import JbAssetExporter
 from jiko_bridge_houdini.commands.jb_asset_importer import JbAssetImporter
+from jiko_bridge_houdini.commands.jb_asset_solo import JbAssetSolo
 from jiko_bridge_houdini.jb_types import JbSource
 from jiko_bridge_houdini.jb_utils import report
 
@@ -12,7 +13,7 @@ class JbCommands:
     def __init__(self, source: JbSource):
         self.asset_import = JbAssetImporter(source)
         self.asset_export = JbAssetExporter(source)
-        self.scene = self.asset_import.scene
+        self.asset_solo = JbAssetSolo(source)
 
     def import_asset(self) -> None:
         """Import the container asset, or the active asset for an empty HDA."""
@@ -37,4 +38,4 @@ class JbCommands:
 
     def solo(self) -> None:
         """Invoke the solo placeholder."""
-        self.scene.solo()
+        self.asset_solo.solo()

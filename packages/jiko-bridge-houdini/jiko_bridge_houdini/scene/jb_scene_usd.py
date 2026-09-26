@@ -100,7 +100,7 @@ class LayerAssembly:
                 for model in item["models"]:
                     if not stage.GetPrimAtPath(model["prim"]):
                         raise hou.NodeError(
-                            f"Cache schema differs for {item['path']}. Enable Override to rebuild it."
+                            f"Cache schema differs for {item['path']}; rebuild with Override."
                         )
                 self.asset_layers[item["asset_id"]] = item["path"]
                 continue
@@ -120,6 +120,7 @@ class LayerAssembly:
             self.stages[item["path"]] = stage
 
     def copy_geometry(self, stage: Usd.Stage, model: dict[str, Any]) -> None:
+        """Convert one prepared model to USD and copy it into the cache layer."""
         primitive = next(
             (
                 prim
@@ -151,6 +152,7 @@ class LayerAssembly:
         _copy_geometry_roots(flattened, destination, parent)
 
     def usd_source(self, path: str) -> Usd.Stage:
+        """Open a USD source file once and reuse the stage."""
         if path not in self.usd_sources:
             stage = Usd.Stage.Open(path)
             if stage is None:
@@ -209,6 +211,7 @@ class LayerAssembly:
     def instances(
         self, stage: Usd.Stage, parent: str, record: dict[str, Any], ancestors: tuple[str, ...] = ()
     ) -> None:
+        """Author one instanced reference per replaced placeholder."""
         for index, instance in enumerate(record["instances"]):
             if not instance.get("replace"):
                 continue
@@ -219,6 +222,7 @@ class LayerAssembly:
             _set_instance_transform(prim, instance["transform"])
 
     def author(self) -> None:
+        """Fill every newly created cache layer with geometry and instances."""
         self.allocate()
         for item in self.plan["layers"]:
             if item["reuse"]:
@@ -231,6 +235,7 @@ class LayerAssembly:
 
 
 def assemble_usd(node: hou.LopNode) -> None:
+    """Python LOP entry point: assemble the whole stage on cook."""
     owner = cast(hou.OpNode, node.parent())
     graph: dict[str, Any] = {"mode": "cached"}
     geometry = None

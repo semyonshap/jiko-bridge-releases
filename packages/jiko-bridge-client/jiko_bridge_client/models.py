@@ -65,6 +65,24 @@ class AssetModel:
         return None
 
     @classmethod
+    def from_container_fields(
+        cls,
+        pack_name: Optional[str],
+        asset_name: Optional[str],
+        active_type: Optional[str] = None,
+        vault_name: Optional[str] = None,
+    ) -> Optional["AssetModel"]:
+        """Build an asset from the fields a container stores, or None if incomplete."""
+        if not (pack_name and asset_name):
+            return None
+        return cls(
+            pack_name=pack_name,
+            asset_name=asset_name,
+            active_type=active_type,
+            vault_name=vault_name,
+        )
+
+    @classmethod
     def from_dict(cls, data: dict) -> "AssetModel":
         """Create an AssetModel instance from a dictionary."""
         return cls(

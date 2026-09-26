@@ -88,17 +88,11 @@ class JbSceneContainer(JbSceneObjects):
         container["jb_vault_name"] = asset.vault_name or ""
 
     def get_asset_data_from_container(self, container) -> Optional[AssetModel]:
-        pack_name = container.get("jb_pack_name", None)
-        asset_name = container.get("jb_asset_name", None)
-        asset_type = container.get("jb_asset_type", None)
-        vault_name = container.get("jb_vault_name", None)
-        if not (pack_name and asset_name):
-            return None
-        return AssetModel(
-            pack_name=pack_name,
-            asset_name=asset_name,
-            active_type=asset_type,
-            vault_name=vault_name,
+        return AssetModel.from_container_fields(
+            container.get("jb_pack_name", None),
+            container.get("jb_asset_name", None),
+            container.get("jb_asset_type", None),
+            container.get("jb_vault_name", None),
         )
 
     def copy_asset_data(self, src, dst) -> None:

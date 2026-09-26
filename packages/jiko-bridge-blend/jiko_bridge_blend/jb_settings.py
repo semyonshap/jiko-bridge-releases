@@ -2,25 +2,23 @@ import bpy
 
 from .jb_types import JbSettingsBase
 
-_SOLO_STACK_SIZE = 5
-
 
 class JB_PG_SoloEntry(bpy.types.PropertyGroup):  # pylint: disable=invalid-name
-    """One entry in the solo history stack (stored per scene)."""
+    """One entry of the stored solo history (stored per scene)."""
 
-    collections: bpy.props.StringProperty(default="")  # type: ignore[valid-type]
+    containers: bpy.props.StringProperty(default="")  # type: ignore[valid-type]
 
-    def set_collections(self, collections: list) -> None:
+    def set_containers(self, containers: list) -> None:
         """Serialize collection names to string."""
-        self.collections = ",".join(c.name for c in collections if c)
+        self.containers = ",".join(c.name for c in containers if c)
 
-    def get_collections(self) -> list:
+    def get_containers(self) -> list:
         """Deserialize collection names back to collections."""
-        if not self.collections:
+        if not self.containers:
             return []
         return [
             col
-            for name in self.collections.split(",")
+            for name in self.containers.split(",")
             if (col := bpy.data.collections.get(name)) is not None
         ]
 
@@ -28,7 +26,7 @@ class JB_PG_SoloEntry(bpy.types.PropertyGroup):  # pylint: disable=invalid-name
 class JB_PG_SceneSettings(bpy.types.PropertyGroup):  # pylint: disable=invalid-name
     """Per-scene settings stored on bpy.types.Scene."""
 
-    solo_stack: bpy.props.CollectionProperty(type=JB_PG_SoloEntry)  # type: ignore[valid-type]
+    solo: bpy.props.CollectionProperty(type=JB_PG_SoloEntry)  # type: ignore[valid-type]
 
     export_format: bpy.props.EnumProperty(  # type: ignore[valid-type]
         name="Export Format",
@@ -55,46 +53,28 @@ class JbSettings(JbSettingsBase):
         return getattr(scene, "jb_settings", None)
 
     def get_export_format(self) -> str:
+        """Return the configured export format, defaulting to FBX."""
         s = self.scene_settings
         if s is None:
             return "fbx"
         return s.export_format
 
-    def load_solo_stack(self) -> list[list]:
-        """Load Solo Stack"""
+    def load_solo(self) -> list[list]:
+        """Return the stored solo selections, newest first."""
         s = self.scene_settings
         if s is None:
             return []
-        return [entry.get_collections() for entry in s.solo_stack if entry.get_collections()]
+        return [entry.get_containers() for entry in s.solo if entry.get_containers()]
 
-    def save_solo_selection(self, containers) -> None:
+    def save_solo(self, entries: list[list]) -> None:
+        """Replace the stored solo selections with the given entries, newest first."""
         s = self.scene_settings
         if s is None:
             return
-
-        entries = [entry.get_collections() for entry in s.solo_stack]
-
-        if entries and set(entries[0]) == set(containers):
-            return
-
-        entries.insert(0, containers)
-        entries = entries[:_SOLO_STACK_SIZE]
-        s.solo_stack.clear()
-        for entry_collections in entries:
-            entry = s.solo_stack.add()
-            entry.set_collections(entry_collections)
-
-    def pop_solo_selection(self) -> list:
-        s = self.scene_settings
-        if s is None or len(s.solo_stack) < 2:
-            return []
-        entries = [entry.get_collections() for entry in s.solo_stack]
-        previous = entries[1]
-        s.solo_stack.clear()
-        for entry_collections in entries[1:]:
-            entry = s.solo_stack.add()
-            entry.set_collections(entry_collections)
-        return previous
+        s.solo.clear()
+        for entry_containers in entries:
+            entry = s.solo.add()
+            entry.set_containers(entry_containers)
 
 
 settings_classes = (

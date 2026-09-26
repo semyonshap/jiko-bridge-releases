@@ -1,6 +1,3 @@
-from jiko_bridge_houdini.scene.jb_scene_graph import JbSceneGraph
-
-"Rebuild the packed sources with the replaced objects taken out of them."
 import json
 
 import hou
@@ -13,6 +10,7 @@ from jiko_bridge_houdini.jb_utils import (
     set_global_attrib,
     unpack_piece,
 )
+from jiko_bridge_houdini.scene.jb_scene_graph import JbSceneGraph
 
 
 def clean_geometry(geometry: hou.Geometry, remove_objects: list[str]) -> hou.Geometry:
@@ -50,6 +48,7 @@ def clean_geometry(geometry: hou.Geometry, remove_objects: list[str]) -> hou.Geo
 
 
 def prepare_geometry(sop: hou.SopNode) -> None:
+    """Build one packed geometry per discovered asset model."""
     input_node = sop.inputs()[0]
     if input_node is None:
         raise hou.NodeError("Connect the graph SOP to this node.")
@@ -117,8 +116,6 @@ class JbSceneObjects(JbSceneBase):
 
     def get_materials_from_objects(self, objects):
         self.logger.warning("Houdini material selection is not implemented.")
-        pass
 
     def merge_duplicates_materials(self, material):
         self.logger.warning("Houdini material merging is not implemented.")
-        pass

@@ -42,9 +42,8 @@ class JbScene(JbSceneFile):
         finally:
             self._import_target = previous
 
-    def export_with_temp(self, src, ext):
+    def export_with_temp(self, _src, _ext):
         self.logger.warning("Houdini asset export is not implemented.")
-        pass
 
     def get_project_filepath(self) -> str | None:
         return hou.hipFile.path()
@@ -54,18 +53,16 @@ class JbScene(JbSceneFile):
         return apply_asset(self.source, asset)
 
     def refresh(self) -> None:
+        """Force the discovery SOP to cook so the graph picks up changes."""
         scan = self.source.node("geometry/discover_assets")
         if scan is not None:
             scan.cook(force=True)
 
     def graph_data(self, roots: list[JbContainer]) -> dict[str, Any]:
+        """Serialize the asset graph for the geometry SOPs."""
         return {
             "version": 1,
             "roots": [c.record["id"] for c in roots if c.record["models"]],
             "assets": list(self.graph.records.values()),
             "warnings": self.graph.warnings,
         }
-
-    def solo(self):
-        self.logger.warning("Houdini solo mode is not implemented.")
-        pass

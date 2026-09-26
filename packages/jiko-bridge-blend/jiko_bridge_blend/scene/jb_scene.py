@@ -4,7 +4,6 @@ from typing import Optional
 import bpy
 from jiko_bridge_client import get_logger
 
-from ..jb_settings import JbSettings
 from ..jb_types import JbSource
 from .jb_scene_temp import JBSceneTemp
 
@@ -55,34 +54,3 @@ class JbScene(JBSceneTemp):
             self.logger.warning("Current Blender project is not saved.")
             return None
         return filepath
-
-    def solo(self):
-        objects = self.get_selection()
-        instances = self.get_containers_from_instances(objects)
-        containers = self.get_containers_from_objects(objects)
-        combine = instances + containers
-
-        settings = JbSettings(self.source)
-
-        if not combine:
-            combine = settings.pop_solo_selection()
-        else:
-            settings.save_solo_selection(combine)
-
-        if not combine:
-            return
-
-        root = self.get_or_create_container("Assets")
-
-        # Скрыть root
-        self._set_collection_visibility(root, True)
-
-        # Все children -> скрытые
-        for child in root.children:
-            self._set_collection_visibility(child, False)
-
-        # combine -> видимые
-        for col in combine:
-            self._set_collection_visibility(col, True)
-
-        bpy.ops.view3d.view_all()

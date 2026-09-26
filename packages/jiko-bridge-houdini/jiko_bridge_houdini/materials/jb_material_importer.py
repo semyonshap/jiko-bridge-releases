@@ -11,17 +11,14 @@ class JbMaterialImporter(JbMaterialImporterBase):
         self.source = source
         self.logger = get_logger(__name__)
 
-    def get_material_name(self, material):
+    def get_material_name(self, _material):
         """Reserved by the common DCC interface."""
         self.logger.warning("Houdini JbMaterialImporter.get_material_name is not implemented.")
-        pass
 
-    def set_material_name(self, material, name):
+    def set_material_name(self, _material, _name):
         """Reserved by the common DCC interface."""
         self.logger.warning("Houdini JbMaterialImporter.set_material_name is not implemented.")
-        pass
 
-    def import_material(self, asset, file):
+    def import_material(self, _asset, _file):
         """Reserved by the common DCC interface."""
         self.logger.warning("Houdini JbMaterialImporter.import_material is not implemented.")
-        pass

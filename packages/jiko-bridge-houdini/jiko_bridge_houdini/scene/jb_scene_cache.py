@@ -17,6 +17,7 @@ def _cache_root(owner: hou.OpNode) -> str:
 
 
 def scene_output_path(owner: hou.OpNode) -> str:
+    """Path of the assembled scene USD for the selected asset."""
     if not owner.evalParm("asset_name"):
         return ""
     metadata = {
@@ -29,6 +30,7 @@ def scene_output_path(owner: hou.OpNode) -> str:
 
 
 def cache_save_pattern(owner: hou.OpNode) -> str:
+    """Glob pattern matching every cached asset file."""
     return '"' + _cache_root(owner).rstrip("/") + '/*"'
 
 
@@ -44,6 +46,7 @@ def _inside_cache(path: str, root: str) -> bool:
 
 
 def save_usd(owner: hou.OpNode) -> str:
+    """Assemble the stage and write it through the HDA's USD ROP."""
     output = scene_output_path(owner)
     if not output or (not owner.evalParm("cached") and (not cached_asset(owner).files)):
         raise hou.Error("Select an asset before saving USD.")

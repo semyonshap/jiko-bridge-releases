@@ -5,7 +5,6 @@ import urllib.error
 import urllib.request
 from typing import Optional
 
-from .contracts import JbAPIABC
 from .logger import get_logger, log_http
 from .models import AssetModel
 
@@ -40,7 +39,7 @@ def _get_port() -> int:
     return DEFAULT_PORT
 
 
-class JbAPI(JbAPIABC):
+class JbAPI:
     """Client for communicating with the Jiko Bridge API server."""
 
     def __init__(self, host: str = "localhost", port: Optional[int] = None):
@@ -81,16 +80,21 @@ class JbAPI(JbAPIABC):
         return AssetModel.from_dict(data) if data else None
 
     def get_active_asset(self) -> Optional[AssetModel]:
+        """Get the currently active asset based on selection or context."""
         return self._asset("/api/asset/active")
 
     def get_asset_by_search(self, search_key: str) -> Optional[AssetModel]:
+        """Search for an Asset by a free-form key."""
         return self._asset("/api/asset", {"searchKey": search_key}, "POST")
 
     def get_asset(self, asset: AssetModel) -> Optional[AssetModel]:
+        """Get Asset by an AssetModel object."""
         return self._asset("/api/asset", asset.to_dict(), "POST")
 
     def create_asset(self, asset: AssetModel) -> Optional[AssetModel]:
+        """Create a new Asset with the given files and optional metadata."""
         return self._asset("/api/asset/create", asset.to_dict(), "POST", 300)
 
     def update_asset(self, asset: AssetModel) -> Optional[AssetModel]:
+        """Update an existing Asset's files and metadata."""
         return self._asset("/api/asset/update", asset.to_dict(), "POST", 30)

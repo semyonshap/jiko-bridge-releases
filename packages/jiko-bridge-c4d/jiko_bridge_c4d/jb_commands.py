@@ -1,9 +1,9 @@
 import c4d
 from jiko_bridge_c4d.commands.jb_asset_exporter import JbAssetExporter
 from jiko_bridge_c4d.commands.jb_asset_importer import JbAssetImporter
+from jiko_bridge_c4d.commands.jb_asset_solo import JbAssetSolo
 from jiko_bridge_c4d.jb_settings import JbSettingsDialog
 from jiko_bridge_c4d.jb_types import JbSource
-from jiko_bridge_c4d.scene.jb_scene import JbScene
 
 IDC_POPUP_ACTION_IMPORT = 2001
 IDC_POPUP_ACTION_EXPORT = 2002
@@ -18,9 +18,9 @@ class JbCommandsPopup:
 
     def __init__(self, source: JbSource):
         self.doc = source
-        self.scene = JbScene(source)
         self.asset_import = JbAssetImporter(source)
         self.asset_export = JbAssetExporter(source)
+        self.asset_solo = JbAssetSolo(source)
         self._settings_dialog = JbSettingsDialog(source)
 
     def export_asset(self):
@@ -49,7 +49,7 @@ class JbCommandsPopup:
         """Solo mode with history"""
         self.doc.StartUndo()
         try:
-            self.scene.solo()
+            self.asset_solo.solo()
         finally:
             self.doc.EndUndo()
             c4d.EventAdd()

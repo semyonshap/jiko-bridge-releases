@@ -2,14 +2,22 @@
 
 from jiko_bridge_client import get_logger
 from jiko_bridge_houdini.jb_types import JbSettingsBase, JbSource
+from jiko_bridge_houdini.jb_utils import absolute_path
 
 
 class JbSettings(JbSettingsBase):
     """Placeholder until this feature is implemented for Houdini."""
 
+    cache_path: str
+    override: bool
+    convert_units: bool
+
     def __init__(self, source: JbSource):
         self.source = source
         self.logger = get_logger(__name__)
+        self.cache_path = absolute_path(str(source.evalParm("cache_path")))
+        self.override = bool(source.evalParm("override"))
+        self.convert_units = bool(source.evalParm("convert_units"))
 
     def get_export_format(self):
         """Reserved by the common DCC interface."""

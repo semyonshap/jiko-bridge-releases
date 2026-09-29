@@ -1,84 +1,94 @@
-"""Houdini container operations, backed by the prims of an asset layer."""
+"""Asset containers and their metadata in USD and on the HDA."""
 
 import hashlib
 import os
 from typing import Any, Mapping, Optional
 
+import hou
 from jiko_bridge_client import AssetModel
-from jiko_bridge_houdini.jb_types import JbContainer, JbObject
-from jiko_bridge_houdini.jb_utils import source_path
+from jiko_bridge_houdini.jb_types import (
+    ASSET_KIND,
+    ASSETS_PRIM,
+    JbContainer,
+    JbObject,
+)
 from jiko_bridge_houdini.scene.jb_scene_objects import JbSceneObjects
-from pxr import Tf, Usd, UsdGeom
-
-GEOMETRY_PRIM = "geometry"
-ASSET_KIND = "component"
+from jiko_bridge_houdini.utils.jb_utils_params import asset_cache_file, store_asset
+from pxr import Sdf, Tf, Usd, UsdGeom
 
 
-def _base_name(source: str) -> str:
-    return Tf.MakeValidIdentifier(os.path.splitext(os.path.basename(source))[0])
-
-
-def prim_name(source: str) -> str:
-    """Stable prim name of one source file inside an asset container."""
-    source = os.path.normcase(os.path.normpath(source))
-    return f"{_base_name(source)}_{hashlib.sha1(source.encode('utf-8')).hexdigest()[:10]}"
-
-
-def model_path(root: str, source: str) -> str:
-    """Where one model file's geometry lives inside a container."""
-    return f"{root}/{GEOMETRY_PRIM}/{prim_name(source)}"
-
-
-def asset_root(identifier: str, asset: dict[str, Any]) -> str:
-    """Root prim of an asset layer: its asset name, or its identifier."""
-    return "/" + Tf.MakeValidIdentifier(str(asset.get("assetName") or identifier or "asset"))
-
-
-def layer_name(identifier: str, asset: dict[str, Any]) -> str:
-    """Prim name of one asset inside the assembled scene."""
-    names = [asset.get(key) for key in ("vaultName", "packName", "assetName")]
-    joined = "_".join(str(name) for name in names if name)
-    return Tf.MakeValidIdentifier(joined or str(identifier))
-
-
-def author_container(
-    stage: Usd.Stage, path: str, asset: Optional[Mapping[str, Any]] = None
-) -> Usd.Prim:
-    """Define an asset container prim and stamp its asset info dictionary."""
-    prim = UsdGeom.Xform.Define(stage, path).GetPrim()
-    if asset:
-        model = Usd.ModelAPI(prim)
-        model.SetKind(ASSET_KIND)
-        model.SetAssetInfo({str(key): str(value) for key, value in asset.items() if value})
-    return prim
-
-
-def asset_of(container: JbContainer) -> Optional[AssetModel]:
-    """The asset a container prim describes, read back from its asset info."""
-    prim = container.stage.GetPrimAtPath(container.root)
-    if not prim:
-        return None
-    info = Usd.ModelAPI(prim).GetAssetInfo()
-    return AssetModel.from_container_fields(
-        info.get("packName"), info.get("assetName"), None, info.get("vaultName")
-    )
+ASSET_FIELDS = ("vaultName", "packName", "assetName", "assetType")
 
 
 class JbSceneContainer(JbSceneObjects):
-    """Houdini implementation of container operations."""
+    """Houdini implementation of asset container operations."""
+
+    @staticmethod
+    def _base_name(source: str) -> str:
+        return Tf.MakeValidIdentifier(os.path.splitext(os.path.basename(source))[0])
+
+    @staticmethod
+    def asset_fields(asset: Mapping[str, Any]) -> dict[str, str]:
+        """Identity of an asset as the plain strings a container prim stores."""
+        return {key: str(asset[key]) for key in ASSET_FIELDS if asset.get(key)}
+
+    @staticmethod
+    def container_fields(prim: Usd.Prim) -> dict[str, str]:
+        """Identity fields read back from the attributes of a container prim."""
+        fields: dict[str, str] = {}
+        for key in ASSET_FIELDS:
+            attribute = prim.GetAttribute(key)
+            if attribute is None:
+                continue
+            value = attribute.Get()
+            if value:
+                fields[key] = str(value)
+        return fields
+
+    def prim_name(self, source: str) -> str:
+        """Stable prim name of one source file inside an asset container."""
+        source = os.path.normcase(os.path.normpath(source))
+        return f"{self._base_name(source)}_{hashlib.sha1(source.encode('utf-8')).hexdigest()[:10]}"
+
+    @staticmethod
+    def asset_root(identifier: str, asset: Mapping[str, Any]) -> str:
+        """Prim path of one asset inside the assets root every layer shares."""
+        name = Tf.MakeValidIdentifier(str(asset.get("assetName") or identifier or "asset"))
+        return f"/{ASSETS_PRIM}/{name}"
+
+    def author_container(
+        self, stage: Usd.Stage, path: str, asset: Optional[Mapping[str, Any]] = None
+    ) -> Usd.Prim:
+        """Define an asset container prim and stamp its identity attributes."""
+        parent = str(Sdf.Path(path).GetParentPath())
+        if parent != "/":
+            UsdGeom.Xform.Define(stage, parent)
+        prim = UsdGeom.Xform.Define(stage, path).GetPrim()
+        fields = self.asset_fields(asset or {})
+        if fields:
+            Usd.ModelAPI(prim).SetKind(ASSET_KIND)
+        for key in ASSET_FIELDS:
+            attribute = prim.CreateAttribute(key, Sdf.ValueTypeNames.String, custom=True)
+            if key in fields:
+                attribute.Set(fields[key])
+        return prim
+
+    @staticmethod
+    def asset_of(fields: Mapping[str, Any]) -> Optional[AssetModel]:
+        """The asset a set of container identity fields describes, or None if incomplete."""
+        return AssetModel.from_container_fields(
+            fields.get("packName"),
+            fields.get("assetName"),
+            fields.get("assetType"),
+            fields.get("vaultName"),
+        )
 
     def get_container(self, asset: AssetModel) -> JbContainer | None:
-        """The container of an asset whose layer is already on disk."""
-        container = self.stage.find(asset)
-        if container is None:
+        """The container of an asset that already has a cache layer on disk."""
+        path = asset_cache_file(self.node, asset)
+        if self.settings.override or not path or not os.path.isfile(path):
             return None
-        stored = asset_of(container)
-        if stored is None:
-            return None
-        names = (stored.vault_name, stored.pack_name, stored.asset_name)
-        if names != (asset.vault_name, asset.pack_name, asset.asset_name):
-            return None
-        return container
+        return self._open_container(asset)
 
     def get_or_create_container(self, name: str, parent=None) -> JbContainer:
         """Open the container of a named asset, creating its layer when absent."""
@@ -86,39 +96,42 @@ class JbSceneContainer(JbSceneObjects):
         return self.get_or_create_asset_container(asset)[0]
 
     def get_or_create_asset_container(self, asset, file=None) -> tuple[JbContainer, bool]:
-        """Open the asset layer; the flag tells whether the work is already done."""
-        container = self.stage.open(asset)
-        if file is None or not file.filepath:
-            return container, self.stage.has_models(container)
-        return container, self.stage.has_model(container, source_path(file.filepath))
+        """Record the asset in its entry, then open the layer that entry names."""
+        store_asset(self.node, asset)
+        container = self._open_container(asset)
+        self.set_asset_data(container, asset, file)
+        return container, self._has_models(container)
 
     def set_asset_data(self, container, asset, file=None) -> None:
-        """Keep the asset identity on the container prim."""
+        """Keep the asset identity on the container prim of its own layer."""
         container.asset.update(asset.to_dict())
-        if file is not None:
-            container.asset["assetType"] = file.asset_type
-        author_container(container.stage, container.root, container.asset)
+        asset_type = file.asset_type if file is not None else asset.active_type
+        if asset_type:
+            container.asset["assetType"] = asset_type
+        self.author_container(self._edit(container), container.root, container.asset)
 
     def get_asset_data_from_container(self, container) -> AssetModel | None:
-        """Read the asset identity back from the container prim."""
-        return asset_of(container)
+        """Read the asset identity back from the container prim of its own layer."""
+        prim = self.source.GetPrimAtPath(container.root)
+        fields = self.container_fields(prim) if prim is not None else container.asset
+        return self.asset_of(fields)
 
     def copy_asset_data(self, src, dst) -> None:
         """Carry the asset identity over to another container or object."""
         if isinstance(dst, JbContainer):
             dst.asset = dict(src.asset)
-            author_container(dst.stage, dst.root, dst.asset)
+            self.author_container(self._edit(dst), dst.root, dst.asset)
         else:
             dst.data["asset"] = dict(src.asset)
 
     def get_containers_from_objects(self, objects) -> list[JbContainer]:
         """Every container the given objects belong to."""
-        result = []
+        result: dict[str, JbContainer] = {}
         for obj in objects:
             container = obj if isinstance(obj, JbContainer) else getattr(obj, "target", None)
-            if container is not None and container not in result:
-                result.append(container)
-        return result
+            if container is not None:
+                result.setdefault(self.container_key(container), container)
+        return list(result.values())
 
     def get_containers_from_instances(self, objects) -> list[JbContainer]:
         """Every container the given instances point at."""
@@ -131,26 +144,46 @@ class JbSceneContainer(JbSceneObjects):
         for obj in objects:
             target = obj.target
             replace = target is not None and obj.data.get("transform") is not None
-            cycle = bool(replace and self.stage.is_cycle(container, target))
+            cycle = bool(replace and self._is_cycle(container, target))
             obj.data["cycle"] = cycle
             obj.data["replace"] = replace and not cycle
             if cycle and target is not None:
-                self.warnings.append(f"Cyclic dependency: {container.root} -> {target.root}")
+                self.message(f"Cyclic dependency: {container.root} -> {target.root}")
             self.remove_object(obj)
             obj.parent = container
             if obj.data["replace"]:
-                self.stage.add_object(container, obj)
+                self._add_instance(container, obj)
+                placeholder = obj.data.get("placeholder")
+                if placeholder is not None:
+                    placeholder.data["replace"] = True
 
     def cleanup_container(self, container) -> None:
-        """Author every parsed model, write the layer, report what stayed open."""
-        for obj in container.pending:
-            if obj.target is None:
-                self.warnings.append(
-                    f"Unresolved placeholder {obj.data['object']} in {container.root}"
-                )
-        self.stage.finish(container)
-        container.pending.clear()
+        """Report the placeholders that stayed unresolved."""
+        for obj in self.get_children(container):
+            self.message(f"Unresolved placeholder {obj.data['object']} in {container.root}")
 
     def clear_container(self, container) -> None:
         """Empty a container so its asset can be imported again."""
-        self.stage.clear(container)
+        layer = self._layer_of(container)
+        layer.Clear()
+        self._set_layer_metrics(layer)
+        layer.defaultPrim = ASSETS_PRIM
+        self.author_container(self._edit(container), container.root)
+
+    def _has_models(self, container: JbContainer) -> bool:
+        """Whether this container already holds geometry of any model."""
+        prim = self.source.GetPrimAtPath(self.geometry_path(container.root))
+        return bool(prim) and bool(prim.GetChildren())
+
+    def _open_container(self, asset: AssetModel) -> JbContainer:
+        """The container of an asset: its cache layer, its prim path and its metadata."""
+        metadata = asset.to_dict()
+        file = asset_cache_file(self.node, asset)
+        if file is None:
+            raise hou.NodeError(f"The asset has no cache file: {metadata.get('assetName')!r}")
+        container = JbContainer(file, self.asset_root("", metadata), asset=dict(metadata))
+        self._layer(file, reset=not self._attached(file))
+        self._attach(container)
+        if not self.source.GetPrimAtPath(container.root):
+            self.author_container(self._edit(container), container.root)
+        return container

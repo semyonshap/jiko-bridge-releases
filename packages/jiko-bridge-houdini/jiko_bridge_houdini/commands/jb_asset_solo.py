@@ -8,7 +8,6 @@ from jiko_bridge_houdini.scene.jb_scene import JbScene
 class JbAssetSolo(JbAssetSoloBase):
     """Placeholder until this feature is implemented for Houdini."""
 
-    scene: JbScene
     scene_class = JbScene
     settings_class = JbSettings
 

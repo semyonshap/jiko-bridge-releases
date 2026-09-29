@@ -12,7 +12,6 @@ from jiko_bridge_client import (
     JbSceneABC,
     JbSettingsABC,
 )
-from pxr import Usd
 
 JbSource: TypeAlias = hou.OpNode
 JbMatrix: TypeAlias = hou.Matrix4
@@ -25,25 +24,7 @@ class JbContainer:
 
     layer: str
     root: str
-    stage: Usd.Stage
     asset: dict[str, Any] = field(default_factory=dict)
-    models: dict[str, "JbModel"] = field(default_factory=dict)
-    remove_objects: list[str] = field(default_factory=list)
-    pending: list["JbObject"] = field(default_factory=list)
-
-
-@dataclass(eq=False)
-class JbModel:
-    """One parsed model file of a container, kept until the layer is authored."""
-
-    source: str
-    geometry: Optional[hou.Geometry] = None
-    placeholders: list["Placeholder"] = field(default_factory=list)
-
-    @property
-    def converted(self) -> bool:
-        """Whether the file has to be converted rather than referenced."""
-        return self.geometry is not None
 
 
 @dataclass(eq=False)
@@ -56,7 +37,9 @@ class JbObject:
 
 
 JbData: TypeAlias = JbContainer | JbObject | JbMaterial
+
 JbSceneBase: TypeAlias = JbSceneABC[JbSource, JbMatrix, JbContainer, JbObject, JbMaterial]
+
 JbAssetImporterBase: TypeAlias = JbAssetImporterABC[
     JbSource, JbMatrix, JbContainer, JbObject, JbMaterial
 ]
@@ -77,3 +60,17 @@ class Placeholder(TypedDict):
     object: str
     names: List[str]
     transform: Optional[List[float]]
+
+
+GEOMETRY_PRIM = "geometry"
+INSTANCES_PRIM = "instances"
+ASSETS_PRIM = "assets"
+ASSETS_PARM = "assets"
+FILES_PARM = "num_files"
+ASSET_KIND = "component"
+IMPORT_NODE = "import_assets"
+TARGET_LAYER_ATTR = "jb:targetLayer"
+TARGET_PRIM_ATTR = "jb:targetPrim"
+PLACEHOLDER_SOURCE_ATTR = "jb:placeholderSource"
+PLACEHOLDER_NAMES_ATTR = "jb:placeholderNames"
+PLACEHOLDER_TRANSFORM_ATTR = "jb:placeholderTransform"

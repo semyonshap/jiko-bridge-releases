@@ -1,11 +1,9 @@
 import os
-from logging import Logger
 from typing import Optional
 
 import c4d
 from jiko_bridge_c4d.jb_types import JbSource
 from jiko_bridge_c4d.scene.jb_scene_file import JbSceneFile
-from jiko_bridge_client import get_logger
 
 
 class JbScene(JbSceneFile):
@@ -14,11 +12,6 @@ class JbScene(JbSceneFile):
     def __init__(self, source: JbSource):
         super().__init__()
         self._source = source
-        self._logger = get_logger(__name__)
-
-    @property
-    def logger(self) -> Logger:
-        return self._logger
 
     @property
     def source(self) -> JbSource:

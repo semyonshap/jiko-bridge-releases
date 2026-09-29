@@ -15,12 +15,12 @@ class JbAssetSolo(JbAssetSoloBase):
     def _apply_solo(self, containers: list[JbContainer]) -> None:
         root, _ = self.scene.get_or_create_container("Assets")
 
-        self.scene.set_container_visibility(root, 1)
+        self.scene.set_container_visibility(root, False)
 
         for child in root.GetChildren():
-            self.scene.set_container_visibility(child, 2)
+            self.scene.set_container_visibility(child, None)
 
         for container in containers:
-            self.scene.set_container_visibility(container, 0)
+            self.scene.set_container_visibility(container, True)
 
         c4d.CallCommand(12288)

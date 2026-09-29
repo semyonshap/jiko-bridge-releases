@@ -1,8 +1,6 @@
-from logging import Logger
 from typing import Optional
 
 import bpy
-from jiko_bridge_client import get_logger
 
 from ..jb_types import JbSource
 from .jb_scene_temp import JBSceneTemp
@@ -11,14 +9,9 @@ from .jb_scene_temp import JBSceneTemp
 class JbScene(JBSceneTemp):
     """High-level operations for the active Blender scene."""
 
-    def __init__(self, source):
+    def __init__(self, source: JbSource):
         super().__init__()
-        self._logger = get_logger(__name__)
         self._source = source
-
-    @property
-    def logger(self) -> Logger:
-        return self._logger
 
     @property
     def source(self) -> JbSource:

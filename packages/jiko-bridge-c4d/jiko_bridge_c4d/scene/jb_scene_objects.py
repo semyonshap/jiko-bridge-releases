@@ -1,4 +1,5 @@
 import re
+from typing import Optional
 
 import c4d
 from jiko_bridge_c4d.jb_types import JbData, JbMaterial, JbObject, JbSceneBase
@@ -122,10 +123,11 @@ class JbSceneObjects(JbSceneBase):
         if element is not None:
             obj[element] = value
 
-    def set_container_visibility(self, obj: c4d.BaseObject, mode: int) -> None:
-        """Set the editor and render visibility mode of the container."""
-        obj[c4d.ID_BASEOBJECT_VISIBILITY_EDITOR] = mode
-        obj[c4d.ID_BASEOBJECT_VISIBILITY_RENDER] = mode
+    def set_container_visibility(self, container: c4d.BaseObject, visible: Optional[bool]) -> None:
+        """Set the editor and render visibility of the container; None inherits from the parent."""
+        mode = 2 if visible is None else int(not visible)
+        container[c4d.ID_BASEOBJECT_VISIBILITY_EDITOR] = mode
+        container[c4d.ID_BASEOBJECT_VISIBILITY_RENDER] = mode
 
     def merge_duplicates_materials(self, material: c4d.BaseMaterial) -> None:
         pattern = re.compile(r"^" + re.escape(material.GetName()) + r"\.\d+$")

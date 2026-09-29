@@ -4,21 +4,20 @@ import json
 import logging
 import os
 import urllib.error
-from typing import Any, Optional, Dict, List, TypedDict, Generator, Generic, TypeVar, cast, TypeAlias, Mapping, Sequence, Iterator, BinaryIO
+from typing import Any, Optional, Dict, List, TypedDict, Generator, Generic, TypeVar, cast, TypeAlias, Sequence, Mapping, Iterator, BinaryIO
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import platform
 import urllib.request
 from abc import ABC, abstractmethod
 from logging import Logger
 from pathlib import Path
 import hou
-from pxr import Usd, Gf, Sdf, UsdGeom, Tf
-from contextlib import contextmanager
+from pxr import Gf, Sdf, Usd, UsdGeom, Tf, UsdShade
 import hashlib
 import math
+from contextlib import contextmanager
 import struct
-import loputils
 
 # --- jiko_bridge_client.logger ---
 
@@ -257,7 +256,7 @@ class JbSceneABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbM
     """Abstract base class for all Jiko Bridge scene operations."""
 
     @abstractmethod
-    def __init__(self, source: JbSourceT):
+    def __init__(self, source: JbSourceT) -> None:
         ...
 
     @property
@@ -266,9 +265,9 @@ class JbSceneABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbM
         """Return the source scene."""
 
     @property
-    @abstractmethod
     def logger(self) -> Logger:
         """Return the logger instance."""
+        return get_logger(type(self).__module__)
 
     @abstractmethod
     def walk(self, root: list[JbObjectT | JbContainerT | JbMaterialT]) -> list[JbObjectT | JbContainerT | JbMaterialT]:
@@ -298,9 +297,19 @@ class JbSceneABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbM
     def merge_duplicates_materials(self, material: JbMaterialT) -> None:
         """Replace duplicate materials (.001, .002, ...) with the given base material."""
 
+    def set_container_visibility(self, container: JbContainerT, visible: bool | None) -> None:
+        """Show, hide or release one container; None lets it inherit from its parent.
+
+        The default leaves the scene as it is.
+        """
+
     @abstractmethod
     def get_container(self, asset: AssetModel) -> Optional[JbContainerT]:
         """Get the container associated with the given asset, if it exists."""
+
+    def container_key(self, container: JbContainerT) -> str:
+        """Stable key of one container, unique inside the scene."""
+        return str(id(container))
 
     @abstractmethod
     def get_or_create_container(self, name: str, parent: Optional[JbContainerT]=None) -> JbContainerT:
@@ -379,12 +388,37 @@ class JbSceneABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbM
         ...
 
     @abstractmethod
-    def temp_source(self, objects: Optional[list[JbObjectT | JbContainerT]]=None, unit_scale: float | int=1.0, debug: bool=False) -> Generator[JbSourceT, None, None]:
-        """Context manager for temporary scenes."""
+    def temp_source(self) -> Generator[Any, None, None]:
+        """Context manager for the isolated scene the import works in."""
 
     @abstractmethod
     def import_with_temp(self, file_path: str, target: JbContainerT) -> None:
         """Import a file into an isolated scene, then copy to target collection."""
+
+    def finish_asset(self, container: JbContainerT) -> None:
+        """Persist the work of one asset once it is fully imported.
+
+        Called by the shared import workflow after every file of an asset and
+        its placeholders have been resolved, so a scene can flush what it keeps
+        in memory per asset instead of once per session. The default keeps the
+        scene in memory and does nothing.
+        """
+    _messages: list[str]
+
+    @property
+    def messages(self) -> list[str]:
+        """Everything the last import left unresolved, oldest first."""
+        if not hasattr(self, '_messages'):
+            self._messages = []
+        return self._messages
+
+    def message(self, text: str) -> None:
+        """Record one thing this session could not resolve."""
+        self.messages.append(text)
+
+    def report(self) -> str:
+        """Everything the last import left unresolved, one line per item."""
+        return '\n'.join(self.messages)
 
     @abstractmethod
     def export_with_temp(self, src: list[JbObjectT | JbContainerT], ext: str) -> Optional[str]:
@@ -413,151 +447,9 @@ class JbMaterialImporterABC(ABC, Generic[JbSourceT, JbMaterialT]):
     def import_material(self, asset: AssetModel, file: AssetFile) -> Optional[JbMaterialT]:
         """Import a single material file into the scene."""
 
-class JbAssetImporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]):
-    """Base class for asset importers holding the shared import workflow.
+# --- jiko_bridge_client.commands.jb_asset_exporter ---
 
-    A plugin names ``scene_class`` and ``materials_class`` and, when it has to
-    deviate, overrides the matching hook below: the selection, lookup and
-    instance rules are implemented once here. The source document is taken by
-    ``__init__`` and is deliberately not part of the interface.
-    """
-    scene_class: type[JbSceneABC[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]]
-    materials_class: type[JbMaterialImporterABC[JbSourceT, JbMaterialT]]
-
-    def __init__(self, source: JbSourceT):
-        self.source = source
-        self.api = JbAPI()
-        self.scene = self.scene_class(source)
-        self.materials = self.materials_class(source)
-        self._asset_cache: dict[str, AssetModel | None] = {}
-
-    @property
-    def logger(self) -> Logger:
-        """Logger of the concrete plugin module, so log lines stay traceable."""
-        return get_logger(type(self).__module__)
-
-    def import_assets(self) -> None:
-        """Imports assets by selection."""
-        self._asset_cache = {}
-        for asset in self._collect_assets():
-            self._import_single(asset)
-
-    def import_message(self) -> str:
-        """Return a confirmation message based on the current selection."""
-        materials, containers = self._collect_data()
-        if materials:
-            return f'Import assets for materials?\n{len(materials)} material(s) with asset info found in selection.'
-        if containers:
-            return f'Import assets for asset containers?\n{len(containers)} asset container(s) found in selection.'
-        return 'Import active asset from Jiko Bridge.'
-
-    def _collect_data(self) -> tuple[list[JbMaterialT], list[JbContainerT]]:
-        objects = cast(List[JbObjectT], self.scene.get_selection())
-        return (self.scene.get_materials_from_objects(objects), self.scene.get_containers_from_objects(objects))
-
-    def _collect_assets(self) -> list[AssetModel]:
-        assets: list[AssetModel] = []
-        materials, containers = self._collect_data()
-        if materials:
-            for material in materials:
-                name = self.materials.get_material_name(material)
-                if not name:
-                    continue
-                asset = self._resolve_asset(name)
-                if asset is None:
-                    continue
-                assets.append(asset)
-                if not AssetModel.from_string(name):
-                    self.materials.set_material_name(material, f'{asset.pack_name}__{asset.asset_name}')
-        elif containers:
-            for container in containers:
-                asset = self._asset_from_container(container)
-                if asset:
-                    assets.append(asset)
-        else:
-            asset = self.api.get_active_asset()
-            if asset:
-                assets.append(asset)
-        return assets
-
-    def _asset_from_container(self, container: JbContainerT) -> AssetModel | None:
-        """Re-read the asset of a container that is about to be imported into."""
-        self.scene.clear_container(container)
-        asset_model = self.scene.get_asset_data_from_container(container)
-        if not asset_model:
-            return None
-        asset_model.active_type = None
-        return self.api.get_asset(asset_model)
-
-    def _import_single(self, asset: AssetModel) -> None:
-        for file in asset.files:
-            match file.bridge_type:
-                case 'model':
-                    container = self._create_model(asset, file)
-                    self._convert_to_instances(container)
-                case 'material':
-                    material = self.materials.import_material(asset, file)
-                    if material:
-                        self.scene.merge_duplicates_materials(material)
-                case _:
-                    self.logger.warning('Unsupported bridge type: %s', file.bridge_type)
-
-    def _create_model(self, asset: AssetModel, file: AssetFile) -> JbContainerT:
-        container, exists = self.scene.get_or_create_asset_container(asset, file)
-        if exists:
-            self.scene.create_instance(container, cast(str, asset.asset_name))
-        else:
-            self.scene.import_with_temp(cast(str, file.filepath), container)
-        return container
-
-    def _convert_to_instances(self, container: JbContainerT) -> None:
-        queue = [container]
-        visited: set[int] = set()
-        while queue:
-            current = queue.pop(0)
-            if id(current) in visited:
-                continue
-            visited.add(id(current))
-            for obj in cast(List[JbObjectT], self.scene.walk([current])):
-                asset_model = None
-                for name in self.scene.get_names_from_placeholder(obj):
-                    asset_model = self._resolve_asset(name)
-                    if asset_model:
-                        break
-                if not asset_model:
-                    continue
-                asset_container = self._resolve_placeholder(obj, current, asset_model)
-                if asset_container:
-                    queue.append(asset_container)
-            self.scene.cleanup_container(current)
-
-    def _resolve_asset(self, name: str) -> AssetModel | None:
-        """Resolve an asset by bundled name or by search, caching misses too."""
-        if name in self._asset_cache:
-            return self._asset_cache[name]
-        query = AssetModel.from_string(name)
-        asset = self.api.get_asset(query) if query else None
-        if asset is None:
-            asset = self.api.get_asset_by_search(name)
-        self._asset_cache[name] = asset
-        return asset
-
-    def _resolve_placeholder(self, obj: JbObjectT, container: JbContainerT, asset_model: AssetModel) -> JbContainerT | None:
-        asset_container = self.scene.get_container(asset_model)
-        created = False
-        if not asset_container:
-            for file in asset_model.files:
-                asset_container, exists = self.scene.get_or_create_asset_container(asset_model, file)
-                if not exists:
-                    self.scene.import_with_temp(cast(str, file.filepath), asset_container)
-            created = True
-        if asset_container is None:
-            return None
-        instance = self.scene.create_instance(asset_container, cast(str, asset_model.asset_name))
-        self.scene.copy_object_transform(instance, obj)
-        self.scene.move_objects_to_container([instance], container)
-        self.scene.remove_object(obj)
-        return asset_container if created else None
+# Asset export workflow shared by every Jiko Bridge DCC plugin.
 
 class JbAssetExporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]):
     """Base class for asset exporters holding the shared export workflow.
@@ -648,6 +540,164 @@ class JbAssetExporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObje
         if (filepath := self.scene.get_project_filepath()):
             self.api.create_asset(AssetModel(files=[AssetFile(filepath=filepath)]))
 
+# --- jiko_bridge_client.commands.jb_asset_importer ---
+
+# Asset import workflow shared by every Jiko Bridge DCC plugin.
+
+class JbAssetImporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]):
+    """Base class for asset importers holding the shared import workflow.
+
+    A plugin names ``scene_class`` and ``materials_class`` and, when it has to
+    deviate, overrides the matching hook below: the selection, lookup and
+    instance rules are implemented once here. The source document is taken by
+    ``__init__`` and is deliberately not part of the interface.
+    """
+    scene_class: type[JbSceneABC[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]]
+    materials_class: type[JbMaterialImporterABC[JbSourceT, JbMaterialT]]
+
+    def __init__(self, source: JbSourceT):
+        self.source = source
+        self.api = JbAPI()
+        self.scene = self.scene_class(source)
+        self.materials = self.materials_class(source)
+        self._asset_cache: dict[str, AssetModel | None] = {}
+
+    @property
+    def logger(self) -> Logger:
+        """Logger of the concrete plugin module, so log lines stay traceable."""
+        return get_logger(type(self).__module__)
+
+    def import_assets(self) -> None:
+        """Imports assets by selection."""
+        self._asset_cache = {}
+        for asset in self._collect_assets():
+            self._import_single(asset)
+
+    def import_message(self) -> str:
+        """Return a confirmation message based on the current selection."""
+        materials, containers = self._collect_data()
+        if materials:
+            return f'Import assets for materials?\n{len(materials)} material(s) with asset info found in selection.'
+        if containers:
+            return f'Import assets for asset containers?\n{len(containers)} asset container(s) found in selection.'
+        return 'Import active asset from Jiko Bridge.'
+
+    def _collect_data(self) -> tuple[list[JbMaterialT], list[JbContainerT]]:
+        objects = cast(List[JbObjectT], self.scene.get_selection())
+        return (self.scene.get_materials_from_objects(objects), self.scene.get_containers_from_objects(objects))
+
+    def _collect_assets(self) -> list[AssetModel]:
+        assets: list[AssetModel] = []
+        materials, containers = self._collect_data()
+        if materials:
+            for material in materials:
+                name = self.materials.get_material_name(material)
+                if not name:
+                    continue
+                asset = self._resolve_asset(name)
+                if asset is None:
+                    continue
+                assets.append(asset)
+                if not AssetModel.from_string(name):
+                    self.materials.set_material_name(material, f'{asset.pack_name}__{asset.asset_name}')
+        elif containers:
+            for container in containers:
+                asset = self._asset_from_container(container)
+                if asset:
+                    assets.append(asset)
+        else:
+            asset = self.api.get_active_asset()
+            if asset:
+                assets.append(asset)
+        return assets
+
+    def _asset_from_container(self, container: JbContainerT) -> AssetModel | None:
+        """Re-read the asset of a container that is about to be imported into."""
+        self.scene.clear_container(container)
+        asset_model = self.scene.get_asset_data_from_container(container)
+        if not asset_model:
+            return None
+        asset_model.active_type = None
+        return self.api.get_asset(asset_model)
+
+    def _import_single(self, asset: AssetModel) -> None:
+        container: JbContainerT | None = None
+        for file in asset.files:
+            match file.bridge_type:
+                case 'model':
+                    container = self._create_model(asset, file)
+                    self._convert_to_instances(container)
+                case 'material':
+                    material = self.materials.import_material(asset, file)
+                    if material:
+                        self.scene.merge_duplicates_materials(material)
+                case _:
+                    self.logger.warning('Unsupported bridge type: %s', file.bridge_type)
+        if container is not None:
+            self.scene.finish_asset(container)
+
+    def _create_model(self, asset: AssetModel, file: AssetFile) -> JbContainerT:
+        container, exists = self.scene.get_or_create_asset_container(asset, file)
+        if exists:
+            self.scene.create_instance(container, cast(str, asset.asset_name))
+        else:
+            self.scene.import_with_temp(cast(str, file.filepath), container)
+        return container
+
+    def _convert_to_instances(self, container: JbContainerT) -> None:
+        queue = [container]
+        visited: set[str] = set()
+        while queue:
+            current = queue.pop(0)
+            key = self.scene.container_key(current)
+            if key in visited:
+                continue
+            visited.add(key)
+            for obj in cast(List[JbObjectT], self.scene.walk([current])):
+                asset_model = None
+                for name in self.scene.get_names_from_placeholder(obj):
+                    asset_model = self._resolve_asset(name)
+                    if asset_model:
+                        break
+                if not asset_model:
+                    continue
+                asset_container = self._resolve_placeholder(obj, current, asset_model)
+                if asset_container:
+                    queue.append(asset_container)
+            self.scene.cleanup_container(current)
+
+    def _resolve_asset(self, name: str) -> AssetModel | None:
+        """Resolve an asset by bundled name or by search, caching misses too."""
+        if name in self._asset_cache:
+            return self._asset_cache[name]
+        query = AssetModel.from_string(name)
+        asset = self.api.get_asset(query) if query else None
+        if asset is None:
+            asset = self.api.get_asset_by_search(name)
+        self._asset_cache[name] = asset
+        return asset
+
+    def _resolve_placeholder(self, obj: JbObjectT, container: JbContainerT, asset_model: AssetModel) -> JbContainerT | None:
+        asset_container = self.scene.get_container(asset_model)
+        created = False
+        if not asset_container:
+            for file in asset_model.files:
+                asset_container, exists = self.scene.get_or_create_asset_container(asset_model, file)
+                if not exists:
+                    self.scene.import_with_temp(cast(str, file.filepath), asset_container)
+            created = True
+        if asset_container is None:
+            return None
+        instance = self.scene.create_instance(asset_container, cast(str, asset_model.asset_name))
+        self.scene.copy_object_transform(instance, obj)
+        self.scene.move_objects_to_container([instance], container)
+        self.scene.remove_object(obj)
+        return asset_container if created else None
+
+# --- jiko_bridge_client.commands.jb_asset_solo ---
+
+# Solo workflow shared by every Jiko Bridge DCC plugin.
+
 class JbAssetSoloABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]):
     """Base class for the solo command holding the shared solo workflow.
 
@@ -702,6 +752,12 @@ class JbAssetSoloABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT,
     def _apply_solo(self, containers: list[JbContainerT]) -> None:
         """Show the given containers and hide everything else."""
 
+# --- jiko_bridge_client.commands ---
+
+# Shared asset command workflows used by every Jiko Bridge DCC plugin.
+
+
+
 # --- jiko_bridge_client ---
 
 # Jiko Bridge client.
@@ -728,23 +784,7 @@ class JbContainer:
     """An asset authored as a container prim inside its own USD layer."""
     layer: str
     root: str
-    stage: Usd.Stage
     asset: dict[str, Any] = field(default_factory=dict)
-    models: dict[str, 'JbModel'] = field(default_factory=dict)
-    remove_objects: list[str] = field(default_factory=list)
-    pending: list['JbObject'] = field(default_factory=list)
-
-@dataclass(eq=False)
-class JbModel:
-    """One parsed model file of a container, kept until the layer is authored."""
-    source: str
-    geometry: Optional[hou.Geometry] = None
-    placeholders: list['Placeholder'] = field(default_factory=list)
-
-    @property
-    def converted(self) -> bool:
-        """Whether the file has to be converted rather than referenced."""
-        return self.geometry is not None
 
 @dataclass(eq=False)
 class JbObject:
@@ -768,6 +808,40 @@ class Placeholder(TypedDict):
     object: str
     names: List[str]
     transform: Optional[List[float]]
+GEOMETRY_PRIM = 'geometry'
+INSTANCES_PRIM = 'instances'
+ASSETS_PRIM = 'assets'
+ASSETS_PARM = 'assets'
+FILES_PARM = 'num_files'
+ASSET_KIND = 'component'
+IMPORT_NODE = 'import_assets'
+TARGET_LAYER_ATTR = 'jb:targetLayer'
+TARGET_PRIM_ATTR = 'jb:targetPrim'
+PLACEHOLDER_SOURCE_ATTR = 'jb:placeholderSource'
+PLACEHOLDER_NAMES_ATTR = 'jb:placeholderNames'
+PLACEHOLDER_TRANSFORM_ATTR = 'jb:placeholderTransform'
+
+# --- jiko_bridge_houdini.jb_utils ---
+
+# Small Houdini UI and path helpers.
+
+def report(logger: logging.Logger, message: Optional[str]=None, box: Optional[str]=None, severity: hou.EnumValue=hou.severityType.Warning) -> None:
+    """Report a message: log it, show it in a message box, or both."""
+    levels = {hou.severityType.Message: logging.INFO, hou.severityType.ImportantMessage: logging.INFO, hou.severityType.Warning: logging.WARNING, hou.severityType.Error: logging.ERROR, hou.severityType.Fatal: logging.CRITICAL}
+    if message:
+        logger.log(levels.get(severity, logging.WARNING), message)
+    if box and hou.isUIAvailable():
+        hou.ui.displayMessage(box, title='Jiko Bridge', severity=severity)
+
+def absolute_path(value: str) -> str:
+    """Expand Houdini variables and normalise slashes; empty value stays empty."""
+    if not value:
+        return ''
+    return os.path.abspath(hou.text.expandString(value)).replace('\\', '/')
+
+def source_path(path: str | None) -> str:
+    """Expand a Houdini source path and normalise its separators."""
+    return absolute_path(path or '')
 
 # --- jiko_bridge_houdini.jb_settings ---
 
@@ -775,10 +849,16 @@ class Placeholder(TypedDict):
 
 class JbSettings(JbSettingsBase):
     """Placeholder until this feature is implemented for Houdini."""
+    cache_path: str
+    override: bool
+    convert_units: bool
 
     def __init__(self, source: JbSource):
         self.source = source
         self.logger = get_logger('jiko_bridge_houdini.jb_settings')
+        self.cache_path = absolute_path(str(source.evalParm('cache_path')))
+        self.override = bool(source.evalParm('override'))
+        self.convert_units = bool(source.evalParm('convert_units'))
 
     def get_export_format(self):
         """Reserved by the common DCC interface."""
@@ -793,600 +873,243 @@ class JbSettings(JbSettingsBase):
         """Reserved by the common DCC interface."""
         self.logger.warning('Houdini JbSettings.save_solo is not implemented.')
 
-# --- jiko_bridge_houdini.jb_utils ---
+# --- jiko_bridge_houdini.utils.jb_utils_params ---
 
-# Houdini message reporting.
+CACHE_EXPRESSION = 'if(strcmp(chs("asset_name{}"), ""), "", strcat(chs("cache_path"), "/", chs("vault_name{}"), "/", chs("pack_name{}"), "__", chs("asset_name{}"), ".usd"))'
 
-def report(logger: logging.Logger, message: Optional[str]=None, box: Optional[str]=None, severity: hou.EnumValue=hou.severityType.Warning) -> None:
-    """Report a message: log it, show it in a message box, or both."""
-    levels = {hou.severityType.Message: logging.INFO, hou.severityType.ImportantMessage: logging.INFO, hou.severityType.Warning: logging.WARNING, hou.severityType.Error: logging.ERROR, hou.severityType.Fatal: logging.CRITICAL}
-    if message:
-        logger.log(levels.get(severity, logging.WARNING), message)
-    if box and hou.isUIAvailable():
-        hou.ui.displayMessage(box, title='Jiko Bridge', severity=severity)
-container_logger = get_logger('jiko_bridge_houdini.jb_utils')
+def parm_of(node: hou.OpNode, template: str, *numbers: int) -> Optional[hou.Parm]:
+    """Parameter of one multiparm instance: every ``#`` takes the next number."""
+    for number in numbers:
+        template = template.replace('#', str(number), 1)
+    return node.parm(template)
 
-def apply_asset(node: hou.OpNode, asset: AssetModel) -> bool:
-    """Populate the node's user data; the parms below only mirror it."""
-    files = asset.files
-    if not files:
-        report(container_logger, 'Asset has no files', 'The asset has no files.')
-        return False
-    node.setUserData('jiko_asset', json.dumps(asset.to_dict(), ensure_ascii=False))
-    set_parm(node, 'vault_name', asset.vault_name)
-    set_parm(node, 'pack_name', asset.pack_name)
-    set_parm(node, 'asset_name', asset.asset_name)
-    set_multiparm(node, 'files', {'filepath': [file.filepath for file in files], 'asset_type': [file.asset_type for file in files], 'bridge_type': [file.bridge_type for file in files]})
-    return True
-
-def cached_asset(node: hou.OpNode) -> AssetModel:
-    """The asset stored in the node's user data; the parms only mirror it."""
-    payload = node.userData('jiko_asset')
-    return AssetModel.from_dict(json.loads(payload)) if payload else AssetModel()
-
-def group_prims(geometry: hou.Geometry, name: str) -> Sequence[hou.Prim]:
-    """Primitives a VEX pass collected into a group; no level is rescanned."""
-    group = geometry.findPrimGroup(name)
-    return tuple(group.prims()) if group is not None else ()
-
-def prim_strings(prim: hou.Prim, name: str) -> list[str]:
-    """Read a string array attribute a VEX pass wrote, when that pass wrote one."""
-    if prim.geometry().findPrimAttrib(name) is None:
+def multiparm_numbers(node: hou.OpNode, template: str, *numbers: int) -> list[int]:
+    """Instance numbers of a multiparm, as they appear in its parameter names."""
+    count = parm_of(node, template, *numbers)
+    if count is None:
         return []
-    return list(cast(Sequence[str], prim.stringListAttribValue(name)))
+    offset = _instance_offset(count)
+    return [offset + index for index in range(count.evalAsInt())]
 
-def prim_matrix(prim: hou.Prim, name: str) -> Optional[hou.Matrix4]:
-    """Read a transform attribute a VEX pass wrote, when that pass wrote one."""
-    if prim.geometry().findPrimAttrib(name) is None:
-        return None
-    return _matrix(prim.attribValue(name))
+def parm_text(node: hou.OpNode, template: str, *numbers: int) -> str:
+    """String value of one multiparm parameter, empty when it is absent."""
+    parm = parm_of(node, template, *numbers)
+    return parm.evalAsString() if parm is not None else ''
 
-def add_string_attribs(geometry: hou.Geometry, attrib_type: hou.EnumValue, names: Sequence[str]) -> None:
-    """Create string attributes with an empty default; existing ones are kept."""
-    for name in names:
-        geometry.addAttrib(attrib_type, name, '')
+def set_parm_text(node: hou.OpNode, template: str, value: Optional[str], *numbers: int) -> None:
+    """Write a string into one multiparm parameter, skipping an absent one."""
+    parm = parm_of(node, template, *numbers)
+    text = '' if value is None else str(value)
+    if parm is not None and parm.evalAsString() != text:
+        parm.set(text)
 
-def set_global_attrib(geometry: hou.Geometry, name: str, value: str) -> None:
-    """Write a global attribute, creating it when the geometry lacks it."""
-    if geometry.findGlobalAttrib(name) is None:
-        geometry.addAttrib(hou.attribType.Global, name, '')
-    geometry.setGlobalAttribValue(name, value)
+def set_multiparm_count(node: hou.OpNode, template: str, count: int, *numbers: int) -> None:
+    """Set how many instances a multiparm holds, skipping an absent parameter."""
+    parm = parm_of(node, template, *numbers)
+    if parm is not None and parm.evalAsInt() != count:
+        parm.set(count)
 
-def _matrix(value: Any) -> Optional[hou.Matrix4]:
-    """Read a transform stored either as a matrix or as sixteen floats."""
-    if isinstance(value, hou.Matrix4):
-        return value
-    if isinstance(value, tuple) and len(value) == 16:
-        return hou.Matrix4(cast(Sequence[float], value))
+def set_parm_flag(node: hou.OpNode, template: str, value: bool, *numbers: int) -> None:
+    """Write a toggle into one multiparm parameter, skipping an absent one."""
+    parm = parm_of(node, template, *numbers)
+    if parm is not None and bool(parm.evalAsInt()) != value:
+        parm.set(int(value))
+
+def node_assets(node: hou.OpNode) -> list[AssetModel]:
+    """Every asset entry of the node, in parameter order."""
+    return [AssetModel(vault_name=parm_text(node, 'vault_name#', number) or None, pack_name=parm_text(node, 'pack_name#', number) or None, asset_name=parm_text(node, 'asset_name#', number) or None, files=[AssetFile(filepath=parm_text(node, 'filepath#_#', number, item) or None, asset_type=parm_text(node, 'asset_type#_#', number, item) or None, bridge_type=parm_text(node, 'bridge_type#_#', number, item) or None) for item in multiparm_numbers(node, 'num_files#', number)]) for number in multiparm_numbers(node, ASSETS_PARM)]
+
+def asset_cache_file(node: hou.OpNode, asset: AssetModel) -> Optional[str]:
+    """Cache layer path stored in the entry of one asset, None when it has no entry."""
+    names = (asset.vault_name, asset.pack_name, asset.asset_name)
+    number = _find_entry(node, names)
+    return absolute_path(parm_text(node, 'cache_file#', number)) if number is not None else None
+
+def store_asset(node: hou.OpNode, asset: AssetModel, enable: bool=False) -> None:
+    """Write the asset the Bridge returned into its entry, creating the entry.
+
+    The enable flag seeds only a newly created entry, so a switch the user has
+    set by hand survives the next import.
+    """
+    names = (asset.vault_name, asset.pack_name, asset.asset_name)
+    number = _find_entry(node, names)
+    if number is None:
+        number = _add_entry(node)
+        set_parm_flag(node, 'enable#', enable, number)
+    for template, value in zip(('vault_name#', 'pack_name#', 'asset_name#'), names):
+        set_parm_text(node, template, value, number)
+    cache = parm_of(node, 'cache_file#', number)
+    if cache is not None:
+        cache.setExpression(CACHE_EXPRESSION.format(number, number, number, number), language=hou.exprLanguage.Hscript)
+    set_multiparm_count(node, 'num_files#', len(asset.files), number)
+    for item, file in zip(multiparm_numbers(node, 'num_files#', number), asset.files):
+        for template, value in zip(('filepath#_#', 'asset_type#_#', 'bridge_type#_#'), (file.filepath, file.asset_type, file.bridge_type)):
+            set_parm_text(node, template, value, number, item)
+
+def _instance_offset(count: hou.Parm) -> int:
+    """Offset between the instance indices and the numbers used in parameter names."""
+    return count.multiParmStartOffset() or 1
+
+def _find_entry(node: hou.OpNode, names: tuple[Optional[str], Optional[str], Optional[str]]) -> Optional[int]:
+    """Number of the entry holding the asset; a hand-filled entry has no vault name."""
+    for number, stored in zip(multiparm_numbers(node, ASSETS_PARM), node_assets(node)):
+        if (stored.vault_name, stored.pack_name, stored.asset_name) == names:
+            return number
+        if not stored.vault_name and (stored.pack_name, stored.asset_name) == names[1:]:
+            return number
     return None
 
-def write_files(node_type: hou.OpNodeType, folder: str, names: tuple[str, ...]):
-    """Write the asset's embedded files to disk so VEX can include them."""
-    definition = node_type.definition()
-    if definition is None:
-        raise hou.OperationFailed('This node type has no HDA definition.')
-    sections = definition.sections()
-    root = hou.text.expandString(folder)
-    for name in names:
-        section = sections.get(name)
-        if section is None:
-            continue
-        contents = section.contents()
-        path = os.path.join(root, *name.split('/'))
-        if os.path.isfile(path):
-            with open(path, 'r', encoding='utf-8') as handle:
-                if handle.read() == contents:
-                    continue
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w', encoding='utf-8') as handle:
-            handle.write(contents)
-
-def node_geometry(node: hou.Node) -> hou.Geometry:
-    """The cooked geometry of a SOP; hou-stubs types the getter as optional."""
-    if not isinstance(node, hou.SopNode):
-        raise hou.NodeError(f'{node.path()} is not a geometry node.')
-    return cast(hou.Geometry, node.geometry())
-
-def unpack_piece(geometry: hou.Geometry, primitive: hou.Prim, convert_polysoup: bool=True) -> hou.Geometry:
-    """Copy one primitive out of geometry and unpack it in place."""
-    piece = hou.Geometry()
-    piece.merge(geometry, prims=hou.Selection((primitive,)))
-    return run_verb('unpack', [piece], {'dotransform': False, 'convertpolysoup': convert_polysoup})
-
-def pack_geometry(target: hou.Geometry, geometry: hou.Geometry) -> hou.PackedPrim:
-    """Store geometry in a packed primitive; hou-stubs lacks this method."""
-    return cast(Any, target).createPackedGeometry(geometry)
-
-def set_parm(node: hou.OpNode, name: str, value: Optional[str]) -> None:
-    """Set a parm if the node has it; None becomes the empty string."""
-    parm = node.parm(name)
-    if parm is not None:
-        parm.set('' if value is None else str(value))
-
-def set_multiparm(node: hou.OpNode, name: str, parms: Mapping[str, Sequence[Optional[str]]]) -> None:
-    """Resize a multiparm to the column length and fill every instance of every parm."""
-    count = node.parm(name)
-    columns = list(parms.values())
-    if count is None or not columns:
-        return
-    count.set(len(columns[0]))
-    for parm_name, values in parms.items():
-        for index, value in enumerate(values, start=1):
-            set_parm(node, f'{parm_name}{index}', value)
-
-def absolute_path(value: str) -> str:
-    """Expand Houdini variables and normalise slashes; empty value stays empty."""
-    if not value:
-        return ''
-    return os.path.abspath(hou.text.expandString(value)).replace('\\', '/')
-
-def sop_verb(node_type: str) -> hou.SopVerb:
-    """Get the verb of a SOP type, so its code can run on geometry in memory."""
-    verb = hou.sopNodeTypeCategory().nodeVerb(node_type)
-    if verb is None:
-        raise hou.NodeError(f'The {node_type} SOP type is unavailable.')
-    return cast(hou.SopVerb, verb)
-
-def node_verb(node: hou.SopNode) -> hou.SopVerb:
-    """Get the verb of an existing node, initialized with its parameters."""
-    verb = node.verb()
-    if verb is None:
-        raise hou.NodeError(f'The {node.type().name()} node type has no verb.')
-    verb.loadParmsFromNode(node)
-    return verb
-
-def execute_verb(verb: hou.SopVerb, inputs: Sequence[hou.Geometry]) -> hou.Geometry:
-    """Run a prepared verb over input geometry and return its output."""
-    output = hou.Geometry()
-    verb.execute(output, list(inputs))
-    return output
-
-def run_verb(node_type: str, inputs: Sequence[hou.Geometry], params: Optional[Mapping[str, Any]]=None) -> hou.Geometry:
-    """Run a verb of the given SOP type over input geometry."""
-    verb = sop_verb(node_type)
-    if params:
-        verb.setParms(params)
-    return execute_verb(verb, inputs)
-
-def source_path(path: str | None) -> str:
-    """Expand a Houdini source path and normalise its separators."""
-    return hou.text.expandString(path or '').replace('\\', '/')
-
-def clean_geometry(geometry: hou.Geometry, remove_objects: Sequence[str]) -> hou.Geometry:
-    """Rebuild only affected packed branches, preserving their placement."""
-    removed = set(remove_objects)
-    parents: set[str] = set()
-    for location in removed:
-        parts = location.strip('/').split('/')
-        parents.update(('/' + '/'.join(parts[:index]) for index in range(1, len(parts))))
-
-    def clean(source: hou.Geometry, prefix: str) -> hou.Geometry:
-        result = hou.Geometry()
-        result.merge(source)
-        discard = []
-        replacements = []
-        for primitive in source.prims():
-            location = f'{prefix}/{primitive.number()}'
-            if location in removed:
-                discard.append(primitive.number())
-            elif location in parents:
-                if not isinstance(primitive, hou.PackedPrim):
-                    raise hou.NodeError(f'Placeholder hierarchy changed at {location}.')
-                nested = clean(unpack_piece(source, primitive), location)
-                nested.transform(primitive.fullTransform())
-                replacements.append(nested)
-                discard.append(primitive.number())
-        if discard:
-            handles = [prim for prim in map(result.prim, discard) if prim is not None]
-            result.deletePrims(handles)
-        for nested in replacements:
-            result.merge(nested)
-        return result
-    return clean(geometry, '')
-
-# --- jiko_bridge_houdini.jb_vex ---
-
-# The VEX layer: every program the asset runs on geometry, and the runner.
-
-VEX_FILES = '$HOUDINI_TEMP_DIR/jiko/jiko_bridge'
-VEX_RUN_OVER = {'detail': 0, 'prim': 1, 'point': 2, 'vertex': 3, 'number': 4}
-PLACEHOLDER_GROUP = 'jiko_placeholders'
-_PLACEHOLDER_VEX = '\nstring names[] = {};\nmatrix transform;\nif (JB_EXTRACT(0, @primnum, names, transform)) {\n    s[]@jiko_names = names;\n    4@jiko_transform = transform;\n    @group_jiko_placeholders = 1;\n}\n'
-
-def marker_vex(extract_function: str) -> str:
-    """VEX marker that collects placeholders through an embedded library call."""
-    return _PLACEHOLDER_VEX.replace('JB_EXTRACT', extract_function)
-FBX_VEX = marker_vex('jb_fbx_extract_placeholder')
-ABC_VEX = marker_vex('jb_abc_extract_placeholder')
-
-def vex_snippet(body: str, library: str='lib.vfl') -> str:
-    """Prefix VEX code with the include of the asset's embedded VEX library."""
-    return f'#include "{VEX_FILES}/{library}"\n\n{body}'
-
-def run_vex(geometry: hou.Geometry, body: str, run_over: str='point') -> hou.Geometry:
-    """Run a VEX snippet on geometry in memory, without a node in the scene."""
-    return run_verb('attribvop', [geometry], {'vexsrc': 3, 'vexsnippet': vex_snippet(body), 'bindclass': VEX_RUN_OVER[run_over]})
-
-# --- jiko_bridge_houdini.scene.jb_scene_author ---
-
-# Author USD layers from Houdini geometry, inside or outside a LOP cook.
-
-ASSET_KIND = 'component'
-
-def layer_metrics(layer: Sdf.Layer) -> None:
-    """Set the stage metrics Houdini expects on a layer it authors."""
-    stage = Usd.Stage.Open(layer)
-    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.y)
-    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
-    layer.framesPerSecond = hou.fps()
-    layer.timeCodesPerSecond = hou.fps()
-
-def set_instance_transform(prim: Usd.Prim, values: Sequence[float]) -> None:
-    """Apply a stored 4x4 transform to a prim."""
-    xform = UsdGeom.Xformable(prim)
-    xform.MakeMatrixXform().Set(Gf.Matrix4d(*values))
-
-def author_container(stage: Usd.Stage, path: str, asset: Optional[Mapping[str, Any]]=None) -> Usd.Prim:
-    """Define an asset container prim and stamp its asset info dictionary."""
-    prim = UsdGeom.Xform.Define(stage, path).GetPrim()
-    if asset:
-        model = Usd.ModelAPI(prim)
-        model.SetKind(ASSET_KIND)
-        model.SetAssetInfo({str(key): str(value) for key, value in asset.items() if value})
-    return prim
-
-def reference(stage: Usd.Stage, path: str, layer_path: str, prim: str) -> Usd.Prim:
-    """Reference a container prim of another layer, written or not."""
-    primitive = UsdGeom.Xform.Define(stage, path).GetPrim()
-    primitive.GetReferences().AddReference(layer_path, prim)
-    primitive.SetInstanceable(True)
-    return primitive
-
-def copy_geometry_roots(source: Sdf.Layer, destination: Sdf.Layer, parent: str) -> None:
-    """Copy the root prims of a converted geometry, remapping their internal links."""
-    roots = [prim for prim in source.rootPrims if prim.name != 'HoudiniLayerInfo']
-    mapping = [(prim.path, Sdf.Path(parent).AppendChild(prim.name)) for prim in roots]
-    for old, new in mapping:
-        if not Sdf.CopySpec(source, old, destination, new):
-            raise hou.NodeError(f'Cannot copy imported USD geometry: {old}')
-
-    def remap(path: Sdf.Path) -> Sdf.Path:
-        if path.HasPrefix(Sdf.Path(parent)):
-            return path
-        for old, new in mapping:
-            if path.HasPrefix(old):
-                return path.ReplacePrefix(old, new)
-        return path
-
-    def fix_links(path: Sdf.Path) -> None:
-        spec = destination.GetObjectAtPath(path)
-        if spec is None:
-            return
-        for field in ('targetPaths', 'connectionPaths', 'inheritPaths', 'specializes'):
-            if spec.HasInfo(field):
-                values = spec.GetInfo(field)
-                spec.SetInfo(field, Sdf.PathListOp.CreateExplicit([remap(value) for value in values.GetAppliedItems()]))
-        if spec.HasInfo('references'):
-            values = spec.GetInfo('references').GetAppliedItems()
-            spec.SetInfo('references', Sdf.ReferenceListOp.CreateExplicit([Sdf.Reference(value.assetPath, remap(value.primPath), value.layerOffset, value.customData) if not value.assetPath else value for value in values]))
-    paths: list[Sdf.Path] = []
-    destination.Traverse(Sdf.Path(parent), lambda path: paths.append(Sdf.Path(str(path))))
-    for path in paths:
-        fix_links(path)
-
-def make_explicit(stage: Usd.Stage) -> None:
-    """Turn every instance into explicit specs so its contents can be copied."""
-    stage.SetEditTarget(stage.GetSessionLayer())
-    while True:
-        instances = [prim for prim in stage.Traverse() if prim.IsInstance()]
-        if not instances:
-            break
-        for prim in instances:
-            prim.SetInstanceable(False)
-
-@contextmanager
-def geometry_stage(identifier: str, geometry: hou.Geometry, node: Optional[hou.LopNode]=None) -> Iterator[Usd.Stage]:
-    """Stage holding one converted geometry, authored through a node or the module API."""
-    if node is not None:
-        layer_id = node.addLockedGeometry(identifier, geometry)
-        stage = Usd.Stage.Open(layer_id)
-        if stage is None:
-            raise hou.NodeError(f'Cannot convert geometry to USD: {identifier}')
-        yield stage
-        return
-    layer_id = hou.lop.addLockedGeometry(identifier, geometry)
-    try:
-        stage = Usd.Stage.CreateInMemory()
-        stage.GetRootLayer().subLayerPaths.append(layer_id)
-        yield stage
-    finally:
-        hou.lop.removeLockedGeometry(layer_id)
-
-def geometry_into_layer(stage: Usd.Stage, model_prim: str, identifier: str, geometry: hou.Geometry, node: Optional[hou.LopNode]=None) -> None:
-    """Convert one geometry and copy it under the model prim of the target layer."""
-    with geometry_stage(identifier, geometry, node) as converted:
-        make_explicit(converted)
-        flattened = converted.Flatten()
-        parent = model_prim + '/geometry'
-        UsdGeom.Xform.Define(stage, parent)
-        copy_geometry_roots(flattened, stage.GetRootLayer(), parent)
-
-# --- jiko_bridge_houdini.scene.jb_scene_layer_plan ---
-
-# Map discovered models to USD prims and cache files without writing to disk.
-
-GEOMETRY_PRIM = 'geometry'
-
-def cache_file(cache_root: str, metadata: dict[str, Any]) -> str:
-    """Cache path of one asset, validated against invalid name characters."""
-    if not cache_root:
-        raise hou.NodeError('Set Cache Path before assembling USD layers.')
-    names = []
-    for key in ('vaultName', 'packName', 'assetName'):
-        value = metadata.get(key, '')
-        if not value or value in ('.', '..') or re.search('[<>:"/\\\\|?*\\x00-\\x1f]', value):
-            raise hou.NodeError(f'Invalid or missing {key} for the cache path: {value!r}')
-        if value.endswith(('.', ' ')):
-            raise hou.NodeError(f'Invalid {key} for the cache path: {value!r}')
-        names.append(value)
-    return os.path.join(cache_root, *names, names[-1] + '.usd').replace('\\', '/')
-
-def prim_name(source: str) -> str:
-    """Stable prim name of one source file inside an asset container."""
-    source = os.path.normcase(os.path.normpath(source))
-    return f"{_base_name(source)}_{hashlib.sha1(source.encode('utf-8')).hexdigest()[:10]}"
-
-def _base_name(source: str) -> str:
-    return Tf.MakeValidIdentifier(os.path.splitext(os.path.basename(source))[0])
-
-def asset_root(identifier: str, asset: dict[str, Any]) -> str:
-    """Root prim of an asset layer: its asset name, or its identifier."""
-    return '/' + Tf.MakeValidIdentifier(str(asset.get('assetName') or identifier or 'asset'))
-
-def layer_name(identifier: str, asset: dict[str, Any]) -> str:
-    """Prim name of one asset inside the assembled scene."""
-    names = [asset.get(key) for key in ('vaultName', 'packName', 'assetName')]
-    joined = '_'.join((str(name) for name in names if name))
-    return Tf.MakeValidIdentifier(joined or str(identifier))
-
-def asset_layer(owner: hou.OpNode) -> dict[str, Any] | None:
-    """Layer file, prim name and root prim of the asset this node holds."""
-    cache_root = absolute_path(str(owner.evalParm('cache_path')))
-    asset = {'vaultName': owner.evalParm('vault_name'), 'packName': owner.evalParm('pack_name'), 'assetName': owner.evalParm('asset_name')}
-    if not (cache_root and asset['packName'] and asset['assetName']):
-        return None
-    path = cache_file(cache_root, asset)
-    if not os.path.isfile(path):
-        return None
-    return {'name': layer_name('', asset), 'path': path, 'root': asset_root('', asset)}
-
-def layer_plan(owner: hou.OpNode) -> str | None:
-    """Path of the cached scene this node assembles, when it works from cache."""
-    cache_root = absolute_path(str(owner.evalParm('cache_path')))
-    metadata = {'vaultName': owner.evalParm('vault_name'), 'packName': owner.evalParm('pack_name'), 'assetName': owner.evalParm('asset_name')}
-    path = cache_file(cache_root, metadata)
-    if not os.path.isfile(path):
-        raise hou.NodeError(f'Cached USD does not exist: {path}')
-    return path
-
-# --- jiko_bridge_houdini.scene.jb_scene_stage ---
-
-# The open asset layers of one import session, authored as USD prims.
-
-INSTANCES_PRIM = 'instances'
-SOURCE_ATTR = 'jb:source'
-TARGET_LAYER_ATTR = 'jb:targetLayer'
-TARGET_PRIM_ATTR = 'jb:targetPrim'
-
-def model_path(root: str, source: str) -> str:
-    """Where one model file's geometry lives inside a container."""
-    return f'{root}/{GEOMETRY_PRIM}/{prim_name(source)}'
-
-def instances_path(root: str) -> str:
-    """Where a container keeps the instances of its placeholders."""
-    return f'{root}/{INSTANCES_PRIM}'
-
-def instance_name(target: str, location: str) -> str:
-    """Stable prim name of one instance, derived from its target and location."""
-    digest = hashlib.sha1(f'{target}|{location}'.encode('utf-8')).hexdigest()[:10]
-    return f'instance_{digest}'
-
-def instance_path(root: str, name: str) -> str:
-    """Where one instance prim lives inside a container."""
-    return f'{instances_path(root)}/{name}'
-
-def asset_of(container: JbContainer) -> Optional[AssetModel]:
-    """The asset a container prim describes, read back from its asset info."""
-    prim = container.stage.GetPrimAtPath(container.root)
-    if not prim:
-        return None
-    info = Usd.ModelAPI(prim).GetAssetInfo()
-    return AssetModel.from_container_fields(info.get('packName'), info.get('assetName'), None, info.get('vaultName'))
-
-def instance_targets(container: JbContainer) -> list[tuple[str, str]]:
-    """Every ``(layer, prim)`` an instance of this container points at."""
-    root = container.stage.GetPrimAtPath(instances_path(container.root))
-    if not root:
-        return []
-    targets = []
-    for prim in Usd.PrimRange(root):
-        layer = prim.GetAttribute(TARGET_LAYER_ATTR).Get()
-        target = prim.GetAttribute(TARGET_PRIM_ATTR).Get()
-        if layer and target:
-            targets.append((str(layer), str(target)))
-    return targets
-
-class JbStage:
-    """Own the asset layers one import session authors."""
-
-    def __init__(self, cache_root: str, override: bool=False) -> None:
-        self.cache_root = cache_root
-        self.override = override
-        self.containers: dict[str, JbContainer] = {}
-
-    def open(self, asset: AssetModel) -> JbContainer:
-        """Open the asset layer, creating the container prim when it is absent."""
-        metadata = asset.to_dict()
-        path = cache_file(self.cache_root, metadata)
-        container = self.containers.get(path)
-        if container is not None:
-            return container
-        stage = self._stage(path)
-        container = JbContainer(path, asset_root('', metadata), stage, asset=dict(metadata))
-        author_container(stage, container.root, container.asset)
-        self.containers[path] = container
-        return container
-
-    def find(self, asset: AssetModel) -> Optional[JbContainer]:
-        """The container of an asset whose layer is already on disk."""
-        path = cache_file(self.cache_root, asset.to_dict())
-        if not os.path.isfile(path):
-            return None
-        return self.open(asset)
-
-    def save(self, container: JbContainer) -> None:
-        """Write one layer back to disk once its container is complete."""
-        container.stage.GetRootLayer().Save()
-
-    def clear(self, container: JbContainer) -> None:
-        """Empty the container, keeping the file and its asset info."""
-        layer = container.stage.GetRootLayer()
-        layer.Clear()
-        layer_metrics(layer)
-        layer.defaultPrim = container.root.lstrip('/')
-        author_container(container.stage, container.root, container.asset)
-        container.pending.clear()
-
-    def has_model(self, container: JbContainer, source: str) -> bool:
-        """Whether this container already holds the geometry of one model file."""
-        if source in container.models:
-            return True
-        return bool(container.stage.GetPrimAtPath(model_path(container.root, source)))
-
-    def has_models(self, container: JbContainer) -> bool:
-        """Whether this container already holds geometry of any model."""
-        if container.models:
-            return True
-        path = f'{container.root}/{GEOMETRY_PRIM}'
-        prim = container.stage.GetPrimAtPath(path)
-        return bool(prim) and bool(prim.GetChildren())
-
-    def finish(self, container: JbContainer) -> None:
-        """Author every parsed model of a container, then write its layer."""
-        for model in container.models.values():
-            if model.geometry is None:
-                self.add_model(container, model.source, None, container.remove_objects)
-                continue
-            geometry = clean_geometry(model.geometry, container.remove_objects)
-            self.add_model(container, model.source, geometry)
-        container.models.clear()
-        self.save(container)
-
-    def add_model(self, container: JbContainer, source: str, geometry: Optional[hou.Geometry]=None, remove_objects: Sequence[str]=()) -> None:
-        """Author one model file: converted geometry, or a reference to the source USD."""
-        path = model_path(container.root, source)
-        if geometry is not None:
-            geometry_into_layer(container.stage, path, prim_name(source), geometry)
-        else:
-            self._reference_source(container.stage, path, source, remove_objects)
-        prim = container.stage.OverridePrim(path)
-        prim.CreateAttribute(SOURCE_ATTR, Sdf.ValueTypeNames.String).Set(source)
-
-    def add_object(self, container: JbContainer, obj: JbObject) -> None:
-        """Author one placeholder replacement as an instance prim of the container."""
-        if obj.target is None:
-            return
-        name = instance_name(obj.target.root, str(obj.data.get('object', obj.data['name'])))
-        prim = reference(container.stage, instance_path(container.root, name), obj.target.layer, obj.target.root)
-        transform = obj.data.get('transform')
-        if transform:
-            set_instance_transform(prim, transform)
-        layer = prim.CreateAttribute(TARGET_LAYER_ATTR, Sdf.ValueTypeNames.String)
-        layer.Set(obj.target.layer)
-        target = prim.CreateAttribute(TARGET_PRIM_ATTR, Sdf.ValueTypeNames.String)
-        target.Set(obj.target.root)
-
-    def is_cycle(self, container: JbContainer, target: JbContainer) -> bool:
-        """Whether making this container depend on the target would close a circle."""
-        pending = [target.layer]
-        seen: set[str] = set()
-        while pending:
-            path = pending.pop()
-            if path == container.layer:
-                return True
-            if path in seen:
-                continue
-            seen.add(path)
-            pending.extend((layer for layer, _ in self._targets_of(path)))
-        return False
-
-    def _targets_of(self, path: str) -> list[tuple[str, str]]:
-        """Instance targets of one layer, read from the session or from disk."""
-        holder = next((item for item in self.containers.values() if item.layer == path), None)
-        if holder is not None:
-            return instance_targets(holder)
-        if not os.path.isfile(path):
-            return []
-        stage = Usd.Stage.Open(path)
-        if stage is None:
-            return []
-        return [(str(prim.GetAttribute(TARGET_LAYER_ATTR).Get()), str(prim.GetAttribute(TARGET_PRIM_ATTR).Get())) for prim in stage.Traverse() if prim.GetAttribute(TARGET_LAYER_ATTR).Get()]
-
-    def _stage(self, path: str) -> Usd.Stage:
-        """Open the layer of an asset, creating or emptying it as required."""
-        if os.path.isfile(path):
-            stage = Usd.Stage.Open(path)
-            if stage is None:
-                raise hou.NodeError(f'Cannot open asset layer: {path}')
-            if self.override:
-                stage.GetRootLayer().Clear()
-            return stage
-        layer = Sdf.Layer.CreateNew(path)
-        stage = Usd.Stage.Open(layer)
-        if stage is None:
-            raise hou.NodeError(f'Cannot create asset layer: {path}')
-        layer_metrics(layer)
-        return stage
-
-    def _reference_source(self, stage: Usd.Stage, path: str, source: str, remove_objects: Sequence[str]) -> None:
-        """Keep the original USD file on disk; author replacements as opinions."""
-        UsdGeom.Xform.Define(stage, path)
-        original = Usd.Stage.Open(source)
-        if original is None:
-            raise hou.NodeError(f'Cannot open USD source: {source}')
-        for root in original.GetPseudoRoot().GetChildren():
-            if root.GetName() == 'HoudiniLayerInfo':
-                continue
-            prim = stage.DefinePrim(f'{path}/{root.GetName()}')
-            prim.GetReferences().AddReference(source, root.GetPath())
-        for location in remove_objects:
-            target = Sdf.Path(path + location)
-            for prefix in target.GetPrefixes():
-                prim = stage.GetPrimAtPath(prefix)
-                if prim and prim.IsInstance():
-                    prim.SetInstanceable(False)
-            stage.OverridePrim(target).SetActive(False)
+def _add_entry(node: hou.OpNode) -> int:
+    """Append an empty asset entry and return the number of its parameters."""
+    count = node.parm(ASSETS_PARM)
+    if count is None:
+        raise hou.NodeError('The asset parameter is missing. Rebuild the HDA.')
+    number = _instance_offset(count) + count.evalAsInt()
+    count.set(count.evalAsInt() + 1)
+    return number
 
 # --- jiko_bridge_houdini.scene.jb_scene_objects ---
 
-# Houdini object operations: selection, walking and transforms over containers.
+# Object selection, traversal, copying and transforms.
 
 class JbSceneObjects(JbSceneBase):
     """Houdini implementation of objects operations."""
-    stage: JbStage
-    warnings: list[str]
-    convert_units: bool
-    _import_target: JbContainer | None
+    node: hou.OpNode
+    settings: JbSettings
+    _source: Optional[Usd.Stage]
+
+    def copy_geometry_roots(self, source: Sdf.Layer, destination: Sdf.Layer, parent: str) -> None:
+        """Copy the root prims of a converted geometry, remapping their internal links."""
+        roots = [prim for prim in source.rootPrims if prim.name != 'HoudiniLayerInfo']
+        mapping = [(prim.path, Sdf.Path(parent).AppendChild(prim.name)) for prim in roots]
+        for old, new in mapping:
+            if not Sdf.CopySpec(source, old, destination, new):
+                raise hou.NodeError(f'Cannot copy imported USD geometry: {old}')
+
+        def remap(path: Sdf.Path) -> Sdf.Path:
+            if path.HasPrefix(Sdf.Path(parent)):
+                return path
+            for old, new in mapping:
+                if path.HasPrefix(old):
+                    return path.ReplacePrefix(old, new)
+            return path
+
+        def fix_links(path: Sdf.Path) -> None:
+            spec = destination.GetObjectAtPath(path)
+            if spec is None:
+                return
+            for field in ('targetPaths', 'connectionPaths', 'inheritPaths', 'specializes'):
+                if spec.HasInfo(field):
+                    values = spec.GetInfo(field)
+                    spec.SetInfo(field, Sdf.PathListOp.CreateExplicit([remap(value) for value in values.GetAppliedItems()]))
+            if spec.HasInfo('references'):
+                values = spec.GetInfo('references').GetAppliedItems()
+                spec.SetInfo('references', Sdf.ReferenceListOp.CreateExplicit([Sdf.Reference(value.assetPath, remap(value.primPath), value.layerOffset, value.customData) if not value.assetPath else value for value in values]))
+        paths: list[Sdf.Path] = []
+        destination.Traverse(Sdf.Path(parent), lambda path: paths.append(Sdf.Path(str(path))))
+        for path in paths:
+            fix_links(path)
+
+    @staticmethod
+    def make_explicit(stage: Usd.Stage) -> None:
+        """Turn every instance into explicit specs so its contents can be copied."""
+        while True:
+            instances = [prim for prim in stage.Traverse() if prim.IsInstance()]
+            if not instances:
+                break
+            for prim in instances:
+                prim.SetInstanceable(False)
+
+    def _layer(self, path: str, reset: bool) -> Sdf.Layer:
+        """Open the cache layer of an asset, creating and resetting its file when needed."""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        layer = Sdf.Layer.Find(path)
+        if layer is None:
+            layer = Sdf.Layer.FindOrOpen(path) if os.path.isfile(path) else Sdf.Layer.CreateNew(path)
+        if layer is None:
+            raise hou.NodeError(f'Cannot open asset layer: {path}')
+        if reset and (self.settings.override or not layer.rootPrims):
+            layer.Clear()
+            layer.defaultPrim = ASSETS_PRIM
+            self._set_layer_metrics(layer)
+        return layer
+
+    def _layer_of(self, container: JbContainer) -> Sdf.Layer:
+        """The cache layer of a container, which the session stage sublayers."""
+        layer = Sdf.Layer.Find(container.layer)
+        if layer is None:
+            raise hou.NodeError(f'Cannot open asset layer: {container.layer}')
+        return layer
+
+    def _attached(self, path: str) -> bool:
+        """Whether a layer is already sublayered into the running import."""
+        return path in self.source.GetRootLayer().subLayerPaths
+
+    def _attach(self, container: JbContainer) -> None:
+        """Sublayer the layer of a container into the session stage."""
+        paths = self.source.GetRootLayer().subLayerPaths
+        if container.layer not in paths:
+            paths.append(container.layer)
+
+    def container_key(self, container: JbContainer) -> str:
+        """A container is identified by the cache layer it is authored into."""
+        return container.layer
+
+    def _edit(self, container: JbContainer) -> Usd.Stage:
+        """Point the session stage at the layer of one container before authoring."""
+        self.source.SetEditTarget(self._layer_of(container))
+        return self.source
+
+    def _save_layer(self, path: str) -> None:
+        """Write one asset layer to disk, once its contents are explicit."""
+        layer = Sdf.Layer.Find(path)
+        if layer is None:
+            raise hou.NodeError(f'Cannot open asset layer: {path}')
+        self.make_explicit(Usd.Stage.Open(layer))
+        if not layer.dirty:
+            return
+        if not layer.Save():
+            raise hou.NodeError(f'Cannot save asset layer: {path}')
+
+    @staticmethod
+    def _set_layer_metrics(layer: Sdf.Layer) -> None:
+        """Set the stage metrics Houdini expects on a layer it authors."""
+        stage = Usd.Stage.Open(layer)
+        UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.y)
+        UsdGeom.SetStageMetersPerUnit(stage, 1.0)
+        layer.framesPerSecond = hou.fps()
+        layer.timeCodesPerSecond = hou.fps()
+
+    def set_container_visibility(self, container: JbContainer, visible: bool | None) -> None:
+        """Show, hide or release one container in its own layer."""
+        imageable = UsdGeom.Imageable(self._edit(container).OverridePrim(container.root))
+        attribute = imageable.GetVisibilityAttr()
+        if visible is None:
+            attribute.Clear()
+        elif visible:
+            imageable.MakeVisible()
+        else:
+            imageable.MakeInvisible()
+
+    @staticmethod
+    def set_instance_transform(prim: Usd.Prim, values: Sequence[float]) -> None:
+        """Apply a stored 4x4 transform to a prim."""
+        xform = UsdGeom.Xformable(prim)
+        xform.MakeMatrixXform().Set(Gf.Matrix4d(*values))
+
+    def recorded_assets(self) -> list[AssetModel]:
+        """Every asset the node records, in parameter order."""
+        return node_assets(self.node)
 
     def get_selection(self) -> list[JbData]:
-        """The container of the asset this HDA holds."""
-        asset = cached_asset(self.source)
-        if not (asset.pack_name and asset.asset_name):
-            return []
-        return [self.stage.find(asset) or self.stage.open(asset)]
+        """One container per complete asset entry of the node."""
+        return [self.get_or_create_asset_container(asset)[0] for asset in self.recorded_assets()]
+
+    def record_asset(self, asset) -> None:
+        """Keep an asset the import was asked for in the fields of the node."""
+        store_asset(self.node, asset, enable=True)
 
     def walk(self, root) -> list[JbData]:
-        """The containers and placeholders the given roots hold."""
         result = []
         for obj in root:
             result.append(obj)
@@ -1395,34 +1118,78 @@ class JbSceneObjects(JbSceneBase):
         return result
 
     def get_children(self, obj) -> list[JbObject | JbContainer]:
-        """The placeholders parsed into a container."""
-        return list(obj.pending) if isinstance(obj, JbContainer) else []
+        """The placeholders a container still holds in its layer."""
+        if not isinstance(obj, JbContainer):
+            return []
+        return [JbObject(data, parent=obj) for data in self.placeholders(obj)]
+
+    @staticmethod
+    def geometry_path(root: str) -> str:
+        """Where the geometry of an asset lives inside its container."""
+        return f'{root}/{GEOMETRY_PRIM}'
+
+    def placeholders(self, container: JbContainer) -> list[dict[str, Any]]:
+        """The placeholders a container still holds, read back from its layer."""
+        parent = self.geometry_path(container.root)
+        prim = self.source.GetPrimAtPath(parent)
+        if not prim:
+            return []
+        return [self._placeholder(item, parent) for item in Usd.PrimRange(prim) if item.HasAttribute(PLACEHOLDER_SOURCE_ATTR)]
+
+    def mark_placeholders(self, container: JbContainer, source: str, found: list[dict[str, Any]]) -> None:
+        """Author every placeholder of one model into the layer of its container."""
+        parent = self.geometry_path(container.root)
+        stage = self._edit(container)
+        for placeholder in found:
+            prim = stage.OverridePrim(Sdf.Path(parent + placeholder['object']))
+            self._author(prim, PLACEHOLDER_SOURCE_ATTR, Sdf.ValueTypeNames.String, source)
+            names = placeholder.get('names')
+            if names:
+                self._author(prim, PLACEHOLDER_NAMES_ATTR, Sdf.ValueTypeNames.StringArray, list(names))
+            transform = placeholder.get('transform')
+            if transform:
+                self._author(prim, PLACEHOLDER_TRANSFORM_ATTR, Sdf.ValueTypeNames.DoubleArray, [float(value) for value in transform])
+
+    def drop_placeholder(self, container: JbContainer, location: str) -> None:
+        """Turn off the placeholder prim an instance has taken the place of."""
+        target = Sdf.Path(self.geometry_path(container.root) + location)
+        stage = self._edit(container)
+        for prefix in target.GetPrefixes():
+            prim = stage.GetPrimAtPath(prefix)
+            if prim and prim.IsInstance():
+                prim.SetInstanceable(False)
+        stage.OverridePrim(target).SetActive(False)
+
+    @staticmethod
+    def _author(prim: Usd.Prim, name: str, kind: Sdf.ValueTypeName, value: Any) -> None:
+        """Write one placeholder attribute on a prim of the container layer."""
+        prim.CreateAttribute(name, kind, custom=True).Set(value)
+
+    def _placeholder(self, prim: Usd.Prim, parent: str) -> dict[str, Any]:
+        """One authored placeholder, as the importer reads it."""
+        transform = prim.GetAttribute(PLACEHOLDER_TRANSFORM_ATTR).Get()
+        return {'object': str(prim.GetPath())[len(parent):], 'source': str(prim.GetAttribute(PLACEHOLDER_SOURCE_ATTR).Get() or ''), 'names': [str(name) for name in prim.GetAttribute(PLACEHOLDER_NAMES_ATTR).Get() or []], 'transform': [float(value) for value in transform] if transform else None}
 
     def get_depth(self, obj) -> int:
-        """Depth of an object: containers are roots, their placeholders sit below."""
         return 0 if isinstance(obj, JbContainer) or obj.parent is None else 1
 
     def copy_object_transform(self, obj, target_obj) -> None:
-        """Carry a placeholder's placement and names onto its instance."""
         matrix = target_obj.data.get('transform')
         obj.data['transform'] = list(matrix) if matrix is not None else None
         obj.data['object'] = target_obj.data['object']
         obj.data['names'] = list(target_obj.data.get('names', []))
+        obj.data['source'] = target_obj.data['source']
+        obj.data['placeholder'] = target_obj
 
     def remove_object(self, obj) -> None:
-        """Drop a placeholder, remembering the spot its instance replaces."""
+        """Drop a placeholder, turning off the prim its instance takes the place of."""
         parent = obj.parent
-        if parent is None:
-            return
-        if obj.data.get('replace'):
-            parent.remove_objects.append(str(obj.data['object']))
-        if obj in parent.pending:
-            parent.pending.remove(obj)
+        if isinstance(parent, JbContainer) and obj.target is None and obj.data.get('replace'):
+            self.drop_placeholder(parent, str(obj.data['object']))
         obj.parent = None
 
     def get_materials_from_objects(self, objects):
         """Houdini selects materials by node, not by container contents."""
-        self.logger.warning('Houdini material selection is not implemented.')
         return []
 
     def merge_duplicates_materials(self, material):
@@ -1431,23 +1198,72 @@ class JbSceneObjects(JbSceneBase):
 
 # --- jiko_bridge_houdini.scene.jb_scene_container ---
 
-# Houdini container operations, backed by the prims of an asset layer.
+# Asset containers and their metadata in USD and on the HDA.
+
+ASSET_FIELDS = ('vaultName', 'packName', 'assetName', 'assetType')
 
 class JbSceneContainer(JbSceneObjects):
-    """Houdini implementation of container operations."""
+    """Houdini implementation of asset container operations."""
+
+    @staticmethod
+    def _base_name(source: str) -> str:
+        return Tf.MakeValidIdentifier(os.path.splitext(os.path.basename(source))[0])
+
+    @staticmethod
+    def asset_fields(asset: Mapping[str, Any]) -> dict[str, str]:
+        """Identity of an asset as the plain strings a container prim stores."""
+        return {key: str(asset[key]) for key in ASSET_FIELDS if asset.get(key)}
+
+    @staticmethod
+    def container_fields(prim: Usd.Prim) -> dict[str, str]:
+        """Identity fields read back from the attributes of a container prim."""
+        fields: dict[str, str] = {}
+        for key in ASSET_FIELDS:
+            attribute = prim.GetAttribute(key)
+            if attribute is None:
+                continue
+            value = attribute.Get()
+            if value:
+                fields[key] = str(value)
+        return fields
+
+    def prim_name(self, source: str) -> str:
+        """Stable prim name of one source file inside an asset container."""
+        source = os.path.normcase(os.path.normpath(source))
+        return f"{self._base_name(source)}_{hashlib.sha1(source.encode('utf-8')).hexdigest()[:10]}"
+
+    @staticmethod
+    def asset_root(identifier: str, asset: Mapping[str, Any]) -> str:
+        """Prim path of one asset inside the assets root every layer shares."""
+        name = Tf.MakeValidIdentifier(str(asset.get('assetName') or identifier or 'asset'))
+        return f'/{ASSETS_PRIM}/{name}'
+
+    def author_container(self, stage: Usd.Stage, path: str, asset: Optional[Mapping[str, Any]]=None) -> Usd.Prim:
+        """Define an asset container prim and stamp its identity attributes."""
+        parent = str(Sdf.Path(path).GetParentPath())
+        if parent != '/':
+            UsdGeom.Xform.Define(stage, parent)
+        prim = UsdGeom.Xform.Define(stage, path).GetPrim()
+        fields = self.asset_fields(asset or {})
+        if fields:
+            Usd.ModelAPI(prim).SetKind(ASSET_KIND)
+        for key in ASSET_FIELDS:
+            attribute = prim.CreateAttribute(key, Sdf.ValueTypeNames.String, custom=True)
+            if key in fields:
+                attribute.Set(fields[key])
+        return prim
+
+    @staticmethod
+    def asset_of(fields: Mapping[str, Any]) -> Optional[AssetModel]:
+        """The asset a set of container identity fields describes, or None if incomplete."""
+        return AssetModel.from_container_fields(fields.get('packName'), fields.get('assetName'), fields.get('assetType'), fields.get('vaultName'))
 
     def get_container(self, asset: AssetModel) -> JbContainer | None:
-        """The container of an asset whose layer is already on disk."""
-        container = self.stage.find(asset)
-        if container is None:
+        """The container of an asset that already has a cache layer on disk."""
+        path = asset_cache_file(self.node, asset)
+        if self.settings.override or not path or (not os.path.isfile(path)):
             return None
-        stored = asset_of(container)
-        if stored is None:
-            return None
-        names = (stored.vault_name, stored.pack_name, stored.asset_name)
-        if names != (asset.vault_name, asset.pack_name, asset.asset_name):
-            return None
-        return container
+        return self._open_container(asset)
 
     def get_or_create_container(self, name: str, parent=None) -> JbContainer:
         """Open the container of a named asset, creating its layer when absent."""
@@ -1455,39 +1271,42 @@ class JbSceneContainer(JbSceneObjects):
         return self.get_or_create_asset_container(asset)[0]
 
     def get_or_create_asset_container(self, asset, file=None) -> tuple[JbContainer, bool]:
-        """Open the asset layer; the flag tells whether the work is already done."""
-        container = self.stage.open(asset)
-        if file is None or not file.filepath:
-            return (container, self.stage.has_models(container))
-        return (container, self.stage.has_model(container, source_path(file.filepath)))
+        """Record the asset in its entry, then open the layer that entry names."""
+        store_asset(self.node, asset)
+        container = self._open_container(asset)
+        self.set_asset_data(container, asset, file)
+        return (container, self._has_models(container))
 
     def set_asset_data(self, container, asset, file=None) -> None:
-        """Keep the asset identity on the container prim."""
+        """Keep the asset identity on the container prim of its own layer."""
         container.asset.update(asset.to_dict())
-        if file is not None:
-            container.asset['assetType'] = file.asset_type
-        author_container(container.stage, container.root, container.asset)
+        asset_type = file.asset_type if file is not None else asset.active_type
+        if asset_type:
+            container.asset['assetType'] = asset_type
+        self.author_container(self._edit(container), container.root, container.asset)
 
     def get_asset_data_from_container(self, container) -> AssetModel | None:
-        """Read the asset identity back from the container prim."""
-        return asset_of(container)
+        """Read the asset identity back from the container prim of its own layer."""
+        prim = self.source.GetPrimAtPath(container.root)
+        fields = self.container_fields(prim) if prim is not None else container.asset
+        return self.asset_of(fields)
 
     def copy_asset_data(self, src, dst) -> None:
         """Carry the asset identity over to another container or object."""
         if isinstance(dst, JbContainer):
             dst.asset = dict(src.asset)
-            author_container(dst.stage, dst.root, dst.asset)
+            self.author_container(self._edit(dst), dst.root, dst.asset)
         else:
             dst.data['asset'] = dict(src.asset)
 
     def get_containers_from_objects(self, objects) -> list[JbContainer]:
         """Every container the given objects belong to."""
-        result = []
+        result: dict[str, JbContainer] = {}
         for obj in objects:
             container = obj if isinstance(obj, JbContainer) else getattr(obj, 'target', None)
-            if container is not None and container not in result:
-                result.append(container)
-        return result
+            if container is not None:
+                result.setdefault(self.container_key(container), container)
+        return list(result.values())
 
     def get_containers_from_instances(self, objects) -> list[JbContainer]:
         """Every container the given instances point at."""
@@ -1496,71 +1315,140 @@ class JbSceneContainer(JbSceneObjects):
     def move_objects_to_container(self, objects, container) -> None:
         """Author the given instances into a container; cycles only warn."""
         for obj in objects:
+            target = obj.target
+            replace = target is not None and obj.data.get('transform') is not None
+            cycle = bool(replace and self._is_cycle(container, target))
+            obj.data['cycle'] = cycle
+            obj.data['replace'] = replace and (not cycle)
+            if cycle and target is not None:
+                self.message(f'Cyclic dependency: {container.root} -> {target.root}')
             self.remove_object(obj)
             obj.parent = container
-            if obj.target is None:
-                continue
-            if obj.data.get('transform') is None:
-                obj.data['replace'] = False
-                continue
-            if self.stage.is_cycle(container, obj.target):
-                obj.data['cycle'] = True
-                self.warnings.append(f'Cyclic dependency: {container.root} -> {obj.target.root}')
-                continue
-            obj.data['cycle'] = False
-            obj.data['replace'] = True
-            self.stage.add_object(container, obj)
+            if obj.data['replace']:
+                self._add_instance(container, obj)
+                placeholder = obj.data.get('placeholder')
+                if placeholder is not None:
+                    placeholder.data['replace'] = True
 
     def cleanup_container(self, container) -> None:
-        """Author every parsed model, write the layer, report what stayed open."""
-        for obj in container.pending:
-            if obj.target is None:
-                self.warnings.append(f"Unresolved placeholder {obj.data['object']} in {container.root}")
-        self.stage.finish(container)
-        container.pending.clear()
+        """Report the placeholders that stayed unresolved."""
+        for obj in self.get_children(container):
+            self.message(f"Unresolved placeholder {obj.data['object']} in {container.root}")
 
     def clear_container(self, container) -> None:
         """Empty a container so its asset can be imported again."""
-        self.stage.clear(container)
+        layer = self._layer_of(container)
+        layer.Clear()
+        self._set_layer_metrics(layer)
+        layer.defaultPrim = ASSETS_PRIM
+        self.author_container(self._edit(container), container.root)
+
+    def _has_models(self, container: JbContainer) -> bool:
+        """Whether this container already holds geometry of any model."""
+        prim = self.source.GetPrimAtPath(self.geometry_path(container.root))
+        return bool(prim) and bool(prim.GetChildren())
+
+    def _open_container(self, asset: AssetModel) -> JbContainer:
+        """The container of an asset: its cache layer, its prim path and its metadata."""
+        metadata = asset.to_dict()
+        file = asset_cache_file(self.node, asset)
+        if file is None:
+            raise hou.NodeError(f"The asset has no cache file: {metadata.get('assetName')!r}")
+        container = JbContainer(file, self.asset_root('', metadata), asset=dict(metadata))
+        self._layer(file, reset=not self._attached(file))
+        self._attach(container)
+        if not self.source.GetPrimAtPath(container.root):
+            self.author_container(self._edit(container), container.root)
+        return container
 
 # --- jiko_bridge_houdini.scene.jb_scene_instance ---
 
-MARKERS = {'.abc': ABC_VEX, '.fbx': FBX_VEX}
-
-def sop_placeholders(geometry: hou.Geometry, extension: str) -> Iterator[Placeholder]:
-    """Read the placeholders the marker of a source format collected."""
-    marker = MARKERS.get(extension)
-    if marker is None:
-        raise hou.NodeError(f'Cannot read placeholders from a {extension} source.')
-    marked = run_vex(geometry, marker, run_over='prim')
-    for primitive in group_prims(marked, PLACEHOLDER_GROUP):
-        transform = prim_matrix(primitive, 'jiko_transform')
-        names = prim_strings(primitive, 'jiko_names')
-        yield {'object': f'/{primitive.number()}', 'names': names, 'transform': list(transform.asTuple()) if transform is not None else None}
-
-def usd_placeholders(path: str) -> Iterator[Placeholder]:
-    """Read square placeholder prims from a USD asset file."""
-    stage = Usd.Stage.Open(path)
-    if stage is None:
-        raise hou.NodeError(f'Cannot open USD asset: {path}')
-    time = Usd.TimeCode(hou.frame() * stage.GetTimeCodesPerSecond() / hou.fps())
-    transforms = UsdGeom.XformCache(time)
-    for prim in Usd.PrimRange.Stage(stage, Usd.TraverseInstanceProxies()):
-        if not prim.IsA(cast(Tf.Type, UsdGeom.Mesh)):
-            continue
-        mesh = UsdGeom.Mesh(prim)
-        points = mesh.GetPointsAttr().Get(time)
-        counts = mesh.GetFaceVertexCountsAttr().Get(time)
-        indices = mesh.GetFaceVertexIndicesAttr().Get(time)
-        if points is None or len(points) != 4 or list(counts or []) != [4]:
-            continue
-        if len(set(indices or [])) != 4:
-            continue
-        transform = transforms.GetLocalToWorldTransform(prim)
-        yield {'object': str(prim.GetPath()), 'names': [prim.GetPath().name], 'transform': [float(cast(Sequence[float], transform.GetRow(row))[col]) for row in range(4) for col in range(4)]}
+FBX_TRANSLATION = 'primvars:fbx_translation'
+FBX_ROTATION = 'primvars:fbx_rotation'
+FBX_SCALE = 'primvars:fbx_scale'
+VECTOR_TYPES = (Gf.Vec2f, Gf.Vec3f, Gf.Vec4f, Gf.Vec2d, Gf.Vec3d, Gf.Vec4d)
 
 class JbSceneInstance(JbSceneContainer):
     """Houdini implementation of instance operations."""
+
+    def instances_path(self, root: str) -> str:
+        """Where a container keeps the instances of its placeholders."""
+        return f'{root}/{INSTANCES_PRIM}'
+
+    @staticmethod
+    def instance_name(name: str, location: str) -> str:
+        """Name of one instance, as Cinema 4D and Blender name theirs."""
+        part = Tf.MakeValidIdentifier(location.strip('/').replace('/', '_')) or 'placeholder'
+        return f'Instance_{name}_{part}'
+
+    def instance_path(self, root: str, name: str) -> str:
+        """Where one instance prim lives inside a container."""
+        return f'{self.instances_path(root)}/{name}'
+
+    def _primvar(self, prim: Usd.Prim, name: str, time: Usd.TimeCode) -> Any:
+        """One value of a primvar the FBX conversion wrote: a vector or a vector array."""
+        attribute = prim.GetAttribute(name)
+        if not attribute:
+            return None
+        value = attribute.Get(time)
+        if value is None or isinstance(value, VECTOR_TYPES + (float, int, str)):
+            return value
+        values = list(value)
+        return values[0] if values else None
+
+    def placeholder_transform(self, prim: Usd.Prim, time: Usd.TimeCode, units: float=1.0) -> list[float]:
+        """Placement of a placeholder: the FBX point data when present, else its xform."""
+        translation = self._primvar(prim, FBX_TRANSLATION, time)
+        if translation is None:
+            matrix = UsdGeom.XformCache(time).GetLocalToWorldTransform(prim)
+            return [float(value) for row in matrix for value in row]
+        rotation = self._primvar(prim, FBX_ROTATION, time) or (0.0, 0.0, 0.0)
+        scale = self._primvar(prim, FBX_SCALE, time) or (1.0, 1.0, 1.0)
+        transform = hou.hmath.buildTransform({'translate': tuple((float(value) * units for value in translation)), 'rotate': tuple((math.degrees(float(value)) for value in rotation)), 'scale': tuple((float(value) for value in scale))})
+        return list(transform.asTuple())
+
+    def placeholder_names(self, prim: Usd.Prim, time: Usd.TimeCode) -> list[str]:
+        """Use material and selection names, as the C4D and Blender importers do."""
+        names: list[str] = []
+
+        def add(value: str) -> None:
+            name = value.replace('\\', '/').rsplit('/', 1)[-1]
+            if name and name not in names:
+                names.append(name)
+        candidates = [prim] + [child for child in prim.GetChildren() if child.IsA(UsdGeom.Subset)]
+        for candidate in candidates:
+            material, _ = UsdShade.MaterialBindingAPI(candidate).ComputeBoundMaterial()
+            if material:
+                material_prim = material.GetPrim()
+                add(str(material_prim.GetMetadata('displayName') or material_prim.GetName()))
+            for attribute in ('primvars:shop_materialpath', 'shop_materialpath'):
+                value = candidate.GetAttribute(attribute).Get(time)
+                if isinstance(value, str):
+                    add(value)
+                elif value is not None:
+                    for item in value:
+                        if isinstance(item, str):
+                            add(item)
+            if candidate != prim:
+                add(str(candidate.GetMetadata('displayName') or candidate.GetName()))
+        add(str(prim.GetMetadata('displayName') or prim.GetName()))
+        return names
+
+    def stage_placeholders(self, stage: Usd.Stage, units: float=1.0) -> Iterator[Placeholder]:
+        """Read square placeholder prims from a model file that is a USD stage."""
+        time = Usd.TimeCode(hou.frame() * stage.GetTimeCodesPerSecond() / hou.fps())
+        for prim in Usd.PrimRange.Stage(stage, Usd.TraverseInstanceProxies()):
+            if not prim.IsA(cast(Tf.Type, UsdGeom.Mesh)):
+                continue
+            mesh = UsdGeom.Mesh(prim)
+            points = mesh.GetPointsAttr().Get(time)
+            counts = mesh.GetFaceVertexCountsAttr().Get(time)
+            indices = mesh.GetFaceVertexIndicesAttr().Get(time)
+            if points is None or len(points) != 4 or (not counts):
+                continue
+            if len(set(indices or [])) != 4:
+                continue
+            yield {'object': str(prim.GetPath()), 'names': self.placeholder_names(prim, time), 'transform': self.placeholder_transform(prim, time, units)}
 
     def get_names_from_placeholder(self, obj) -> list[str]:
         """The asset names a placeholder asks for."""
@@ -1580,21 +1468,107 @@ class JbSceneInstance(JbSceneContainer):
         """Houdini has no placeholder authoring in this direction yet."""
         self.logger.warning('Houdini placeholder export is not implemented.')
 
+    def _add_instance(self, container: JbContainer, obj: JbObject) -> None:
+        """Author one placeholder replacement as an instance prim of the container."""
+        if obj.target is None:
+            return
+        location = str(obj.data.get('object', obj.data['name']))
+        name = self.instance_name(str(obj.data['name']), location)
+        prim = UsdGeom.Xform.Define(self._edit(container), self.instance_path(container.root, name)).GetPrim()
+        prim.SetInstanceable(False)
+        transform = obj.data.get('transform')
+        if transform:
+            self.set_instance_transform(prim, transform)
+        layer = prim.CreateAttribute(TARGET_LAYER_ATTR, Sdf.ValueTypeNames.String)
+        layer.Set(obj.target.layer)
+        target = prim.CreateAttribute(TARGET_PRIM_ATTR, Sdf.ValueTypeNames.String)
+        target.Set(obj.target.root)
+        prim.GetReferences().AddReference(obj.target.layer, obj.target.root)
+
+    def _is_cycle(self, container: JbContainer, target: JbContainer) -> bool:
+        """Whether making this container depend on the target would close a circle."""
+        pending = [target.layer]
+        seen: set[str] = set()
+        while pending:
+            path = pending.pop()
+            if path == container.layer:
+                return True
+            if path in seen:
+                continue
+            seen.add(path)
+            pending.extend((layer for layer, _ in self._targets_of(path)))
+        return False
+
+    def _targets_of(self, path: str) -> list[tuple[str, str]]:
+        """Instance targets of one layer, taken from the running import or from disk."""
+        stage = Usd.Stage.Open(path)
+        if stage is None:
+            return []
+        return [(str(prim.GetAttribute(TARGET_LAYER_ATTR).Get()), str(prim.GetAttribute(TARGET_PRIM_ATTR).Get())) for prim in stage.Traverse() if prim.GetAttribute(TARGET_LAYER_ATTR).Get()]
+
 # --- jiko_bridge_houdini.scene.jb_scene_temp ---
+
+# Temporary scenes used while importing model files.
 
 class JbSceneTemp(JbSceneInstance):
     """Houdini implementation of temp operations."""
+    _temp: Optional[Usd.Stage]
+    _temp_units: float
+    _temp_reference: bool
+    _temp_locked: list[str]
 
     @contextmanager
-    def temp_source(self, objects=None, unit_scale=1.0, debug=False):
-        yield self.source
+    def temp_source(self, debug: bool=False) -> Iterator[JbSource]:
+        """Swap in the isolated in-memory stage one model file is converted in."""
+        previous = (self._temp, self._temp_units, self._temp_reference, self._temp_locked)
+        locked: list[str] = []
+        self._temp = Usd.Stage.CreateInMemory()
+        self._temp_units = 1.0
+        self._temp_reference = False
+        self._temp_locked = locked
+        try:
+            yield self._temp
+        finally:
+            self._temp, self._temp_units, self._temp_reference, self._temp_locked = previous
+            if not debug:
+                for layer_id in locked:
+                    hou.lop.removeLockedGeometry(layer_id)
 
-# --- jiko_bridge_houdini.scene.jb_scene_file ---
+    def _copy_source(self, src: Usd.Stage, dst: JbContainer, source: str) -> None:
+        """Author the temp scene into the container: as a reference, or as its geometry."""
+        parent = self.geometry_path(dst.root)
+        stage = self._edit(dst)
+        UsdGeom.Xform.Define(stage, parent)
+        if self._temp_reference:
+            self._reference_source(stage, parent, source)
+        else:
+            self._geometry_into_layer(dst, src)
+        found = list(self.stage_placeholders(src, self._temp_units))
+        self.mark_placeholders(dst, source, found)
+
+    def _geometry_into_layer(self, container: JbContainer, converted: Usd.Stage) -> None:
+        """Copy the root prims of one converted geometry into the layer of its container."""
+        converted.SetEditTarget(converted.GetSessionLayer())
+        self.make_explicit(converted)
+        parent = self.geometry_path(container.root)
+        self.copy_geometry_roots(converted.Flatten(), self._layer_of(container), parent)
+
+    def _reference_source(self, stage: Usd.Stage, path: str, source: str) -> None:
+        """Keep the original USD file on disk; author replacements as opinions."""
+        original = Usd.Stage.Open(source)
+        if original is None:
+            raise hou.NodeError(f'Cannot open USD source: {source}')
+        for root in original.GetPseudoRoot().GetChildren():
+            if root.GetName() == 'HoudiniLayerInfo':
+                continue
+            prim = stage.DefinePrim(f'{path}/{root.GetName()}')
+            prim.GetReferences().AddReference(source, root.GetPath())
+
+# --- jiko_bridge_houdini.utils.jb_utils_fbx ---
 
 CM_TO_METERS = 0.01
 DEFAULT_UNIT_SCALE_FACTOR = 1.0
 DEFAULT_METERS_PER_UNIT = DEFAULT_UNIT_SCALE_FACTOR * CM_TO_METERS
-units_logger = get_logger('jiko_bridge_houdini.scene.jb_scene_file')
 
 def _fbx_read(stream: BinaryIO, size: int) -> bytes:
     value = stream.read(size)
@@ -1643,8 +1617,8 @@ def _fbx_binary_units(stream: BinaryIO, version: int) -> Optional[float]:
         return None
     return scan(file_end, ())
 
-def fbx_meters_per_unit(path: str) -> Optional[float]:
-    """UnitScaleFactor is centimeters per file unit; None when the header is unreadable."""
+def fbx_meters_per_unit(path: str) -> float:
+    """Meters per FBX file unit; raises ValueError when the header is unreadable."""
     try:
         with open(path, 'rb') as stream:
             header = stream.read(27)
@@ -1674,29 +1648,38 @@ def fbx_meters_per_unit(path: str) -> Optional[float]:
             raise ValueError('Invalid FBX UnitScaleFactor')
         return factor * CM_TO_METERS
     except (OSError, ValueError, struct.error) as error:
-        units_logger.warning('Cannot read FBX units from %s: %s', path, error)
-        return None
+        raise ValueError(f'Cannot read FBX units from {path}: {error}') from error
+
+# --- jiko_bridge_houdini.scene.jb_scene_file ---
+
+# Houdini file operations: model import and the assembled stage.
 
 class JbSceneFile(JbSceneTemp):
     """Houdini implementation of file operations."""
 
     def import_file(self, file_path: str) -> bool:
-        """Parse one model file into the container that is being imported."""
-        container = self._import_target
-        if container is None:
-            raise hou.NodeError('A model import needs an asset container.')
+        """Import one model file into the scene the import is running in."""
+        stage = self._temp
+        if stage is None:
+            raise hou.NodeError('A model import needs a temporary scene.')
         source = source_path(file_path)
-        if self.stage.has_model(container, source):
-            return True
-        model = self._read_model(source)
-        if model is None:
+        suffix = Path(source).suffix.lower()
+        if suffix not in MODEL_EXTENSIONS:
+            self.message(f"Cannot import {source}: {suffix or 'no extension'} is not a model format")
             return False
-        container.models[source] = model
-        known = {obj.data['object'] for obj in container.pending}
-        for placeholder in model.placeholders:
-            if placeholder['object'] not in known:
-                container.pending.append(JbObject(dict(placeholder), container))
-                known.add(placeholder['object'])
+        if suffix in USD_EXTENSIONS:
+            self._temp_reference = True
+            stage.GetRootLayer().subLayerPaths.append(source)
+            return True
+        geometry = hou.Geometry()
+        geometry.loadFromFile(source)
+        units = self._file_units(source, suffix)
+        if units != 1.0:
+            geometry.transform(hou.hmath.buildScale(units, units, units))
+        self._temp_units = units
+        layer_id = hou.lop.addLockedGeometry(self.prim_name(source), geometry)
+        self._temp_locked.append(layer_id)
+        stage.GetRootLayer().subLayerPaths.append(layer_id)
         return True
 
     def _import_fbx(self, file_path: str) -> bool:
@@ -1711,78 +1694,52 @@ class JbSceneFile(JbSceneTemp):
         """Houdini has no FBX export yet."""
         self.logger.warning('Houdini FBX export is not implemented.')
 
-    def _read_model(self, source: str) -> JbModel | None:
-        """Parse one model file: its geometry when converted, its placeholders."""
-        suffix = Path(source).suffix.lower()
-        if suffix not in MODEL_EXTENSIONS:
-            self.warnings.append(f"Cannot import {source}: {suffix or 'no extension'} is not a model format")
-            return None
-        if suffix in USD_EXTENSIONS:
-            return JbModel(source, None, list(usd_placeholders(source)))
-        loaded = hou.Geometry()
-        loaded.loadFromFile(source)
-        found = list(sop_placeholders(loaded, suffix))
-        if suffix == '.fbx' and self.convert_units:
-            self._convert_units(source, loaded, found)
-        return JbModel(source, loaded, found)
-
-    def _convert_units(self, source: str, loaded: hou.Geometry, found: Sequence[Placeholder]) -> None:
-        """Scale an FBX source and its placements from file units to meters."""
-        units = fbx_meters_per_unit(source)
-        if units is None:
-            units = DEFAULT_METERS_PER_UNIT
-            self.warnings.append(f'Cannot read FBX units from {source}, assuming {units} meters per unit')
-        if units == 1.0:
-            return
-        loaded.transform(hou.hmath.buildScale(units, units, units))
-        for placeholder in found:
-            matrix = placeholder['transform']
-            if matrix is not None:
-                matrix[12:15] = [value * units for value in matrix[12:15]]
+    def _file_units(self, source: str, suffix: str) -> float:
+        """Meters per unit of one model file, read from the FBX header when it has one."""
+        if not (self.settings.convert_units and suffix == '.fbx'):
+            return 1.0
+        try:
+            return fbx_meters_per_unit(source)
+        except ValueError as error:
+            self.message(f'{error}, assuming {DEFAULT_METERS_PER_UNIT} meters per unit')
+            return DEFAULT_METERS_PER_UNIT
 
 # --- jiko_bridge_houdini.scene.jb_scene ---
-
-# Jiko Bridge scene state: one import session over the asset layers.
 
 class JbScene(JbSceneFile):
     """Houdini implementation of jb_scene operations."""
 
     def __init__(self, source: JbSource):
-        self._source = source
-        self._logger = get_logger('jiko_bridge_houdini.scene.jb_scene')
-        self.stage = JbStage(self.cache_root(), bool(source.evalParm('override')))
-        self.convert_units = bool(source.evalParm('convert_units'))
-        self.warnings: list[str] = []
-        self._import_target: JbContainer | None = None
+        self.node = source
+        self.settings = JbSettings(source)
+        self._source = None
+        self.messages.clear()
+
+    def finish_asset(self, _container: JbContainer) -> None:
+        """Write the layers of one finished asset, and of the assets it pulled in."""
+        self._save_layers()
+
+    def _save_layers(self) -> None:
+        """Write every asset layer the import sublayered; unchanged layers are skipped."""
+        if self._source is None:
+            return
+        for path in self._source.GetRootLayer().subLayerPaths:
+            self._save_layer(path)
 
     @property
-    def source(self) -> JbSource:
-        """The HDA node this scene belongs to."""
+    def source(self) -> Usd.Stage:
+        """The in-memory stage every container of the running import is authored into."""
+        if self._source is None:
+            self._source = Usd.Stage.CreateInMemory()
         return self._source
 
-    @property
-    def logger(self) -> Logger:
-        """Logger of the concrete plugin module."""
-        return self._logger
-
-    def cache_root(self) -> str:
-        """Expanded directory every asset layer is written under."""
-        return absolute_path(str(self.source.evalParm('cache_path')))
-
-    def has_asset(self) -> bool:
-        """Whether this node already carries an asset to import."""
-        asset = cached_asset(self.source)
-        return bool(asset.files)
-
     def import_with_temp(self, file_path: str, target: JbContainer) -> None:
-        """Parse one model file into the given container."""
-        previous = self._import_target
-        self._import_target = target
-        try:
+        """Import one model file in an isolated scene, then author it into the container."""
+        with self.temp_source(debug=False) as tmp_stage:
             if not self.import_file(file_path):
-                self.logger.warning('Cannot import model: %s', file_path)
-        finally:
-            self._import_target = previous
+                self.logger.warning('No objects imported for file: %s', file_path)
+                return
+            self._copy_source(tmp_stage, target, source_path(file_path))
 
     def export_with_temp(self, _src, _ext):
         """Houdini has no asset export yet."""
@@ -1791,20 +1748,6 @@ class JbScene(JbSceneFile):
     def get_project_filepath(self) -> str | None:
         """Path of the current hip file."""
         return hou.hipFile.path()
-
-    def select_asset(self, asset: AssetModel) -> bool:
-        """Persist the asset on the HDA before its layers are authored."""
-        return apply_asset(self.source, asset)
-
-    def refresh(self) -> None:
-        """Force the assembler to cook so the viewport picks up new layers."""
-        assembly = self.source.node('assemble_usd')
-        if assembly is not None:
-            assembly.cook(force=True)
-
-    def report(self) -> str:
-        """Everything this session left unresolved, one line per item."""
-        return '\n'.join(self.warnings)
 
 # --- jiko_bridge_houdini.commands.jb_asset_exporter ---
 
@@ -1860,15 +1803,35 @@ class JbMaterialImporter(JbMaterialImporterBase):
 
 # --- jiko_bridge_houdini.commands.jb_asset_importer ---
 
-# Asset import for Houdini: the shared client workflow over USD layers.
-
 class JbAssetImporter(JbAssetImporterBase):
-    scene: JbScene
+    """Shared DCC import workflow with the node parameters as the asset selection."""
     scene_class = JbScene
     materials_class = JbMaterialImporter
 
-    def __init__(self, source: JbSource):
-        super().__init__(source)
+    def import_assets(self) -> None:
+        """Import every asset the node asks for and record it in its own fields."""
+        self._asset_cache = {}
+        for asset in self._collect_assets():
+            self.scene.record_asset(asset)
+            self._import_single(asset)
+        self._refresh()
+
+    def _refresh(self) -> None:
+        """Re-read the cache layers of the import node after their files were written."""
+        node = self.source.node(IMPORT_NODE)
+        if node is not None:
+            node.cook(force=True)
+
+    def _resolve_asset(self, name: str) -> AssetModel | None:
+        """Only geometry participates in this importer, including dependencies."""
+        asset = super()._resolve_asset(name)
+        return self._model_asset(asset) if asset is not None else None
+
+    @staticmethod
+    def _model_asset(asset: AssetModel) -> AssetModel | None:
+        """Keep the model files of an asset; None when it has none."""
+        files = [file for file in asset.files if file.bridge_type == 'model' and file.filepath]
+        return replace(asset, files=files) if files else None
 
 # --- jiko_bridge_houdini.commands.jb_asset_solo ---
 
@@ -1876,7 +1839,6 @@ class JbAssetImporter(JbAssetImporterBase):
 
 class JbAssetSolo(JbAssetSoloBase):
     """Placeholder until this feature is implemented for Houdini."""
-    scene: JbScene
     scene_class = JbScene
     settings_class = JbSettings
 
@@ -1888,33 +1850,20 @@ class JbAssetSolo(JbAssetSoloBase):
 # Commands shared by HDA callbacks and scripted use.
 
 class JbCommands:
-    """Run commands against the supplied HDA node."""
+    """Single entry point of the plugin: HDA callbacks and scripted use."""
 
     def __init__(self, source: JbSource):
+        self.source = source
         self.asset_import = JbAssetImporter(source)
         self.asset_export = JbAssetExporter(source)
         self.asset_solo = JbAssetSolo(source)
 
-    def import_asset(self) -> None:
-        """Import the active asset and refresh the assembled stage."""
+    def import_assets(self) -> None:
+        """Import every asset of this node and expose it in the assembled stage."""
         scene = self.asset_import.scene
-        if not scene.has_asset():
-            asset = self.asset_import.api.get_active_asset()
-            if asset is not None:
-                scene.select_asset(asset)
         self.asset_import.import_assets()
-        scene.refresh()
-        if scene.warnings:
+        if scene.messages:
             report(scene.logger, scene.report())
-
-    def active_asset(self) -> None:
-        """Select the active Bridge asset without cooking its files yet."""
-        asset = self.asset_import.api.get_active_asset()
-        scene = self.asset_import.scene
-        if asset is None:
-            report(scene.logger, 'Jiko Bridge returned no active asset', 'Jiko Bridge did not return an active asset.')
-            return
-        scene.select_asset(asset)
 
     def export_asset(self) -> None:
         """Invoke the exporter placeholder."""
@@ -1923,140 +1872,6 @@ class JbCommands:
     def solo(self) -> None:
         """Invoke the solo placeholder."""
         self.asset_solo.solo()
-
-# --- jiko_bridge_houdini.jb_plugin ---
-
-# Entry points the HDA PythonModule calls, and the legacy SOP adapters.
-
-EMPTY_GRAPH = json.dumps({'version': 1, 'roots': [], 'assets': [], 'warnings': []})
-
-def _publish_empty_graph(sop: hou.SopNode) -> None:
-    """Keep the geometry SOPs cookable now that the graph lives in the layers."""
-    set_global_attrib(node_geometry(sop), 'jiko_graph', EMPTY_GRAPH)
-
-def discover_assets(sop: hou.SopNode, _owner: hou.OpNode) -> None:
-    """Legacy SOP entry point: assets are authored by the Import button now."""
-    _publish_empty_graph(sop)
-
-def prepare_geometry(sop: hou.SopNode) -> None:
-    """Legacy SOP entry point kept so already built HDAs keep cooking."""
-    _publish_empty_graph(sop)
-
-def instance_points(sop: hou.SopNode) -> None:
-    """Legacy SOP entry point kept so already built HDAs keep cooking."""
-    _publish_empty_graph(sop)
-
-def active_asset(node: hou.OpNode) -> None:
-    """HDA Active button callback."""
-    JbCommands(node).active_asset()
-
-def import_asset(node: hou.OpNode) -> None:
-    """HDA Import button callback."""
-    JbCommands(node).import_asset()
-
-# --- jiko_bridge_houdini.scene.jb_scene_cache ---
-
-# Save the assembled stage through the single USD ROP inside this HDA.
-
-def _cache_root(owner: hou.OpNode) -> str:
-    path = absolute_path(str(owner.evalParm('cache_path')))
-    if not path:
-        raise hou.Error('Set Cache Path before saving USD.')
-    return path
-
-def scene_output_path(owner: hou.OpNode) -> str:
-    """Path of the assembled scene USD for the selected asset."""
-    if not owner.evalParm('asset_name'):
-        return ''
-    metadata = {'vaultName': owner.evalParm('vault_name'), 'packName': owner.evalParm('pack_name'), 'assetName': owner.evalParm('asset_name')}
-    asset_path = cache_file(_cache_root(owner), metadata)
-    return os.path.splitext(asset_path)[0] + '.scene.usd'
-
-def cache_save_pattern(owner: hou.OpNode) -> str:
-    """Glob pattern matching every cached asset file."""
-    return '"' + _cache_root(owner).rstrip('/') + '/*"'
-
-def _path_key(path: str) -> str:
-    return os.path.normcase(os.path.abspath(hou.text.expandString(path)))
-
-def _inside_cache(path: str, root: str) -> bool:
-    try:
-        return os.path.commonpath((_path_key(path), _path_key(root))) == _path_key(root)
-    except ValueError:
-        return False
-
-def save_usd(owner: hou.OpNode) -> str:
-    """Assemble the stage and write it through the HDA's USD ROP."""
-    output = scene_output_path(owner)
-    if not output or (not owner.evalParm('cached') and (not cached_asset(owner).files)):
-        raise hou.Error('Select an asset before saving USD.')
-    root = _cache_root(owner)
-    override = bool(owner.evalParm('override'))
-    if os.path.isfile(output) and (not override):
-        raise hou.Error(f'Scene already exists. Enable Override to overwrite it:\n{output}')
-    assembly = cast(hou.LopNode, owner.node('assemble_usd'))
-    rop = owner.node('usd_rop')
-    if assembly is None or rop is None:
-        raise hou.Error('Rebuild the HDA to add the USD assembly and USD ROP nodes.')
-    assembly.cook(force=True)
-    stage = assembly.stage()
-    if stage is None or assembly.errors():
-        raise hou.Error('USD assembly failed:\n' + '\n'.join(assembly.errors()))
-    if not stage.GetPrimAtPath('/World'):
-        raise hou.Error('The assembled stage has no /World primitive to save.')
-    paths = {_path_key(output): output}
-    for layer in stage.GetUsedLayers():
-        if layer.realPath and _path_key(layer.realPath) == _path_key(output):
-            raise hou.Error(f'The scene output is also a referenced source file:\n{output}')
-        info = layer.GetPrimAtPath('/HoudiniLayerInfo')
-        path = info.customData.get('HoudiniSavePath') if info else None
-        if not path:
-            continue
-        path = hou.text.expandString(path)
-        if not _inside_cache(path, root):
-            continue
-        if _path_key(path) == _path_key(output):
-            raise hou.Error(f'Scene output collides with an asset layer:\n{output}')
-        if os.path.isfile(path) and (not override):
-            raise hou.Error(f'A writable cache layer already exists. Import or enable Override:\n{path}')
-        paths[_path_key(path)] = path
-    for path in paths.values():
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-    cast(hou.Parm, rop.parm('execute')).pressButton()
-    if rop.errors():
-        raise hou.Error('USD save failed:\n' + '\n'.join(rop.errors()))
-    missing = [path for path in paths.values() if not os.path.isfile(path)]
-    if missing:
-        raise hou.Error('USD ROP did not write these files:\n' + '\n'.join(missing))
-    get_logger('jiko_bridge_houdini.scene.jb_scene_cache').info('Saved USD scene: %s', output)
-    return output
-
-# --- jiko_bridge_houdini.scene.jb_scene_usd ---
-
-# Compose the asset layers into one scene layer during cook.
-
-def assemble_usd(node: hou.LopNode) -> None:
-    """Python LOP entry point: reference the container prim of this node's asset."""
-    owner = cast(hou.OpNode, node.parent())
-    node.editableStage()
-    scene = loputils.createPythonLayer(node)
-    layer_metrics(scene)
-    scene.defaultPrim = 'World'
-    stage = Usd.Stage.Open(scene)
-    UsdGeom.Xform.Define(stage, '/World')
-    root = '/World/' + Tf.MakeValidIdentifier(owner.name())
-    UsdGeom.Xform.Define(stage, root)
-    if owner.evalParm('cached'):
-        path = scene_output_path(owner)
-        if path:
-            prim = stage.DefinePrim(root + '/asset')
-            prim.GetReferences().AddReference(path)
-            prim.SetInstanceable(True)
-    else:
-        entry = asset_layer(owner)
-        if entry is not None:
-            reference(stage, f"{root}/{entry['name']}", entry['path'], entry['root'])
-    node.addSubLayer(scene.identifier)
 
 # --- jiko_bridge_houdini ---
 
@@ -2076,8 +1891,12 @@ def assemble_usd(node: hou.LopNode) -> None:
 
 
 
+# --- jiko_bridge_houdini.utils ---
+
+
+
 # --- entry.py ---
 
 # Bundle this entry into the HDA's PythonModule section.
 
-__all__ = ['write_files', 'JbCommands', 'active_asset', 'assemble_usd', 'cache_save_pattern', 'discover_assets', 'import_asset', 'instance_points', 'prepare_geometry', 'save_usd', 'scene_output_path', 'run_vex', 'vex_snippet']
+__all__ = ['JbCommands']

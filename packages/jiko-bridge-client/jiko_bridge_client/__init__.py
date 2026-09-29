@@ -10,10 +10,8 @@ Code by Semyon Shapoval, 2026
 """
 
 from .api import DEFAULT_PORT, JbAPI
+from .commands import JbAssetExporterABC, JbAssetImporterABC, JbAssetSoloABC
 from .contracts import (
-    JbAssetExporterABC,
-    JbAssetImporterABC,
-    JbAssetSoloABC,
     JbContainerT,
     JbMaterialImporterABC,
     JbMaterialT,
@@ -44,6 +42,7 @@ __all__ = [
     "JbSceneABC",
     "JbMaterialImporterABC",
     "JbSettingsABC",
+    # commands
     "JbAssetImporterABC",
     "JbAssetExporterABC",
     "JbAssetSoloABC",

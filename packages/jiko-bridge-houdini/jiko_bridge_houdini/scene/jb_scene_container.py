@@ -1,6 +1,5 @@
 """Asset containers and their metadata in USD and on the HDA."""
 
-import hashlib
 import os
 from typing import Any, Mapping, Optional
 
@@ -8,7 +7,6 @@ import hou
 from jiko_bridge_client import AssetModel
 from jiko_bridge_houdini.jb_types import (
     ASSET_KIND,
-    ASSETS_PRIM,
     JbContainer,
     JbObject,
 )
@@ -22,10 +20,6 @@ ASSET_FIELDS = ("vaultName", "packName", "assetName", "assetType")
 
 class JbSceneContainer(JbSceneObjects):
     """Houdini implementation of asset container operations."""
-
-    @staticmethod
-    def _base_name(source: str) -> str:
-        return Tf.MakeValidIdentifier(os.path.splitext(os.path.basename(source))[0])
 
     @staticmethod
     def asset_fields(asset: Mapping[str, Any]) -> dict[str, str]:
@@ -45,16 +39,16 @@ class JbSceneContainer(JbSceneObjects):
                 fields[key] = str(value)
         return fields
 
-    def prim_name(self, source: str) -> str:
-        """Stable prim name of one source file inside an asset container."""
-        source = os.path.normcase(os.path.normpath(source))
-        return f"{self._base_name(source)}_{hashlib.sha1(source.encode('utf-8')).hexdigest()[:10]}"
+    @staticmethod
+    def prim_name(source: str) -> str:
+        """Prim name of one source file inside an asset container."""
+        return Tf.MakeValidIdentifier(os.path.splitext(os.path.basename(source))[0])
 
     @staticmethod
     def asset_root(identifier: str, asset: Mapping[str, Any]) -> str:
-        """Prim path of one asset inside the assets root every layer shares."""
+        """Root prim of one asset: the container every layer of that asset owns."""
         name = Tf.MakeValidIdentifier(str(asset.get("assetName") or identifier or "asset"))
-        return f"/{ASSETS_PRIM}/{name}"
+        return f"/{name}"
 
     def author_container(
         self, stage: Usd.Stage, path: str, asset: Optional[Mapping[str, Any]] = None
@@ -163,11 +157,13 @@ class JbSceneContainer(JbSceneObjects):
             self.message(f"Unresolved placeholder {obj.data['object']} in {container.root}")
 
     def clear_container(self, container) -> None:
-        """Empty a container so its asset can be imported again."""
+        """Empty a container so its asset can be imported again, only when overriding."""
+        if not self.settings.override:
+            return
         layer = self._layer_of(container)
         layer.Clear()
         self._set_layer_metrics(layer)
-        layer.defaultPrim = ASSETS_PRIM
+        layer.defaultPrim = Sdf.Path(container.root).name
         self.author_container(self._edit(container), container.root)
 
     def _has_models(self, container: JbContainer) -> bool:
@@ -182,7 +178,7 @@ class JbSceneContainer(JbSceneObjects):
         if file is None:
             raise hou.NodeError(f"The asset has no cache file: {metadata.get('assetName')!r}")
         container = JbContainer(file, self.asset_root("", metadata), asset=dict(metadata))
-        self._layer(file, reset=not self._attached(file))
+        self._layer(file, reset=not self._attached(file), root=Sdf.Path(container.root).name)
         self._attach(container)
         if not self.source.GetPrimAtPath(container.root):
             self.author_container(self._edit(container), container.root)

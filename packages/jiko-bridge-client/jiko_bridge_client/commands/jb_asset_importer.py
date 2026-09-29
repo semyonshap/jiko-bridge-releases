@@ -99,12 +99,14 @@ class JbAssetImporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObje
 
     def _asset_from_container(self, container: JbContainerT) -> AssetModel | None:
         """Re-read the asset of a container that is about to be imported into."""
-        self.scene.clear_container(container)
         asset_model = self.scene.get_asset_data_from_container(container)
         if not asset_model:
             return None
         asset_model.active_type = None
-        return self.api.get_asset(asset_model)
+        asset = self.api.get_asset(asset_model)
+        if asset is not None:
+            self.scene.clear_container(container)
+        return asset
 
     def _import_single(self, asset: AssetModel) -> None:
         container: JbContainerT | None = None

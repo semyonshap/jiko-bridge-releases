@@ -6,7 +6,6 @@ from typing import Any, Optional, Sequence
 import hou
 from jiko_bridge_client import AssetModel
 from jiko_bridge_houdini.jb_types import (
-    ASSETS_PRIM,
     GEOMETRY_PRIM,
     PLACEHOLDER_NAMES_ATTR,
     PLACEHOLDER_SOURCE_ATTR,
@@ -95,7 +94,7 @@ class JbSceneObjects(JbSceneBase):
             for prim in instances:
                 prim.SetInstanceable(False)
 
-    def _layer(self, path: str, reset: bool) -> Sdf.Layer:
+    def _layer(self, path: str, reset: bool, root: str) -> Sdf.Layer:
         """Open the cache layer of an asset, creating and resetting its file when needed."""
         os.makedirs(os.path.dirname(path), exist_ok=True)
         layer = Sdf.Layer.Find(path)
@@ -109,7 +108,7 @@ class JbSceneObjects(JbSceneBase):
             raise hou.NodeError(f"Cannot open asset layer: {path}")
         if reset and (self.settings.override or not layer.rootPrims):
             layer.Clear()
-            layer.defaultPrim = ASSETS_PRIM
+            layer.defaultPrim = root
             self._set_layer_metrics(layer)
         return layer
 

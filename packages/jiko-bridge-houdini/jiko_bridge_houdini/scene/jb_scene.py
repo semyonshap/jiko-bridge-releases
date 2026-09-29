@@ -13,6 +13,10 @@ class JbScene(JbSceneFile):
         self.node = source
         self.settings = JbSettings(source)
         self._source = None
+        self._temp = None
+        self._temp_units = 1.0
+        self._temp_reference = False
+        self._temp_locked = []
         self.messages.clear()
 
     def finish_asset(self, _container: JbContainer) -> None:

@@ -1,7 +1,7 @@
 """Temporary scenes used while importing model files."""
 
 from contextlib import contextmanager
-from typing import Iterator, Optional
+from typing import Generator, Optional
 
 import hou
 from jiko_bridge_houdini.jb_types import JbContainer, JbSource
@@ -18,7 +18,7 @@ class JbSceneTemp(JbSceneInstance):
     _temp_locked: list[str]
 
     @contextmanager
-    def temp_source(self, debug: bool = False) -> Iterator[JbSource]:
+    def temp_source(self, debug: bool = False) -> Generator[JbSource, None, None]:
         """Swap in the isolated in-memory stage one model file is converted in."""
         previous = (self._temp, self._temp_units, self._temp_reference, self._temp_locked)
         locked: list[str] = []

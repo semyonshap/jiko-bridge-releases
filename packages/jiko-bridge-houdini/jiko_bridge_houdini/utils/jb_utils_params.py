@@ -6,12 +6,6 @@ from jiko_bridge_houdini.jb_types import ASSETS_PARM
 from jiko_bridge_houdini.jb_utils import absolute_path
 
 
-CACHE_EXPRESSION = (
-    'if(strcmp(chs("asset_name{}"), ""), "", strcat(chs("cache_path"), "/", '
-    'chs("vault_name{}"), "/", chs("pack_name{}"), "__", chs("asset_name{}"), ".usd"))'
-)
-
-
 def parm_of(node: hou.OpNode, template: str, *numbers: int) -> Optional[hou.Parm]:
     """Parameter of one multiparm instance: every ``#`` takes the next number."""
     for number in numbers:
@@ -98,12 +92,14 @@ def store_asset(node: hou.OpNode, asset: AssetModel, enable: bool = False) -> No
         set_parm_flag(node, "enable#", enable, number)
     for template, value in zip(("vault_name#", "pack_name#", "asset_name#"), names):
         set_parm_text(node, template, value, number)
-    cache = parm_of(node, "cache_file#", number)
-    if cache is not None:
-        cache.setExpression(
-            CACHE_EXPRESSION.format(number, number, number, number),
-            language=hou.exprLanguage.Hscript,
-        )
+    set_parm_text(
+        node,
+        "cache_file#",
+        f'`chs("cache_path")`/`chs("vault_name{number}")`'
+        f'/`chs("pack_name{number}")`__`chs("asset_name{number}")`'
+        f'/usd/`chs("asset_name{number}")`.usd',
+        number,
+    )
     set_multiparm_count(node, "num_files#", len(asset.files), number)
     for item, file in zip(multiparm_numbers(node, "num_files#", number), asset.files):
         for template, value in zip(

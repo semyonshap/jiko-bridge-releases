@@ -14,7 +14,6 @@ from logging import Logger
 from pathlib import Path
 import hou
 from pxr import Gf, Sdf, Usd, UsdGeom, Tf, UsdShade
-import hashlib
 import math
 from contextlib import contextmanager
 import struct
@@ -613,12 +612,14 @@ class JbAssetImporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObje
 
     def _asset_from_container(self, container: JbContainerT) -> AssetModel | None:
         """Re-read the asset of a container that is about to be imported into."""
-        self.scene.clear_container(container)
         asset_model = self.scene.get_asset_data_from_container(container)
         if not asset_model:
             return None
         asset_model.active_type = None
-        return self.api.get_asset(asset_model)
+        asset = self.api.get_asset(asset_model)
+        if asset is not None:
+            self.scene.clear_container(container)
+        return asset
 
     def _import_single(self, asset: AssetModel) -> None:
         container: JbContainerT | None = None
@@ -875,8 +876,6 @@ class JbSettings(JbSettingsBase):
 
 # --- jiko_bridge_houdini.utils.jb_utils_params ---
 
-CACHE_EXPRESSION = 'if(strcmp(chs("asset_name{}"), ""), "", strcat(chs("cache_path"), "/", chs("vault_name{}"), "/", chs("pack_name{}"), "__", chs("asset_name{}"), ".usd"))'
-
 def parm_of(node: hou.OpNode, template: str, *numbers: int) -> Optional[hou.Parm]:
     """Parameter of one multiparm instance: every ``#`` takes the next number."""
     for number in numbers:
@@ -938,9 +937,7 @@ def store_asset(node: hou.OpNode, asset: AssetModel, enable: bool=False) -> None
         set_parm_flag(node, 'enable#', enable, number)
     for template, value in zip(('vault_name#', 'pack_name#', 'asset_name#'), names):
         set_parm_text(node, template, value, number)
-    cache = parm_of(node, 'cache_file#', number)
-    if cache is not None:
-        cache.setExpression(CACHE_EXPRESSION.format(number, number, number, number), language=hou.exprLanguage.Hscript)
+    set_parm_text(node, 'cache_file#', f'`chs("cache_path")`/`chs("vault_name{number}")`/`chs("pack_name{number}")`__`chs("asset_name{number}")`/usd/`chs("asset_name{number}")`.usd', number)
     set_multiparm_count(node, 'num_files#', len(asset.files), number)
     for item, file in zip(multiparm_numbers(node, 'num_files#', number), asset.files):
         for template, value in zip(('filepath#_#', 'asset_type#_#', 'bridge_type#_#'), (file.filepath, file.asset_type, file.bridge_type)):
@@ -1020,7 +1017,7 @@ class JbSceneObjects(JbSceneBase):
             for prim in instances:
                 prim.SetInstanceable(False)
 
-    def _layer(self, path: str, reset: bool) -> Sdf.Layer:
+    def _layer(self, path: str, reset: bool, root: str) -> Sdf.Layer:
         """Open the cache layer of an asset, creating and resetting its file when needed."""
         os.makedirs(os.path.dirname(path), exist_ok=True)
         layer = Sdf.Layer.Find(path)
@@ -1030,7 +1027,7 @@ class JbSceneObjects(JbSceneBase):
             raise hou.NodeError(f'Cannot open asset layer: {path}')
         if reset and (self.settings.override or not layer.rootPrims):
             layer.Clear()
-            layer.defaultPrim = ASSETS_PRIM
+            layer.defaultPrim = root
             self._set_layer_metrics(layer)
         return layer
 
@@ -1206,10 +1203,6 @@ class JbSceneContainer(JbSceneObjects):
     """Houdini implementation of asset container operations."""
 
     @staticmethod
-    def _base_name(source: str) -> str:
-        return Tf.MakeValidIdentifier(os.path.splitext(os.path.basename(source))[0])
-
-    @staticmethod
     def asset_fields(asset: Mapping[str, Any]) -> dict[str, str]:
         """Identity of an asset as the plain strings a container prim stores."""
         return {key: str(asset[key]) for key in ASSET_FIELDS if asset.get(key)}
@@ -1227,16 +1220,16 @@ class JbSceneContainer(JbSceneObjects):
                 fields[key] = str(value)
         return fields
 
-    def prim_name(self, source: str) -> str:
-        """Stable prim name of one source file inside an asset container."""
-        source = os.path.normcase(os.path.normpath(source))
-        return f"{self._base_name(source)}_{hashlib.sha1(source.encode('utf-8')).hexdigest()[:10]}"
+    @staticmethod
+    def prim_name(source: str) -> str:
+        """Prim name of one source file inside an asset container."""
+        return Tf.MakeValidIdentifier(os.path.splitext(os.path.basename(source))[0])
 
     @staticmethod
     def asset_root(identifier: str, asset: Mapping[str, Any]) -> str:
-        """Prim path of one asset inside the assets root every layer shares."""
+        """Root prim of one asset: the container every layer of that asset owns."""
         name = Tf.MakeValidIdentifier(str(asset.get('assetName') or identifier or 'asset'))
-        return f'/{ASSETS_PRIM}/{name}'
+        return f'/{name}'
 
     def author_container(self, stage: Usd.Stage, path: str, asset: Optional[Mapping[str, Any]]=None) -> Usd.Prim:
         """Define an asset container prim and stamp its identity attributes."""
@@ -1336,11 +1329,13 @@ class JbSceneContainer(JbSceneObjects):
             self.message(f"Unresolved placeholder {obj.data['object']} in {container.root}")
 
     def clear_container(self, container) -> None:
-        """Empty a container so its asset can be imported again."""
+        """Empty a container so its asset can be imported again, only when overriding."""
+        if not self.settings.override:
+            return
         layer = self._layer_of(container)
         layer.Clear()
         self._set_layer_metrics(layer)
-        layer.defaultPrim = ASSETS_PRIM
+        layer.defaultPrim = Sdf.Path(container.root).name
         self.author_container(self._edit(container), container.root)
 
     def _has_models(self, container: JbContainer) -> bool:
@@ -1355,7 +1350,7 @@ class JbSceneContainer(JbSceneObjects):
         if file is None:
             raise hou.NodeError(f"The asset has no cache file: {metadata.get('assetName')!r}")
         container = JbContainer(file, self.asset_root('', metadata), asset=dict(metadata))
-        self._layer(file, reset=not self._attached(file))
+        self._layer(file, reset=not self._attached(file), root=Sdf.Path(container.root).name)
         self._attach(container)
         if not self.source.GetPrimAtPath(container.root):
             self.author_container(self._edit(container), container.root)
@@ -1713,6 +1708,10 @@ class JbScene(JbSceneFile):
         self.node = source
         self.settings = JbSettings(source)
         self._source = None
+        self._temp = None
+        self._temp_units = 1.0
+        self._temp_reference = False
+        self._temp_locked = []
         self.messages.clear()
 
     def finish_asset(self, _container: JbContainer) -> None:

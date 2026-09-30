@@ -14,33 +14,20 @@ class JbSceneTemp(JbSceneInstance):
     """Houdini implementation of temp operations."""
 
     _temp: Optional[Usd.Stage]
-    _temp_reference: bool
-    _temp_locked: list[str]
+    _temp_layer: Optional[str]
 
     @contextmanager
     def temp_source(self, debug: bool = False) -> Generator[Usd.Stage, None, None]:
         """Swap in the isolated in-memory stage one model file is converted in."""
-        previous = (self._temp, self._temp_reference, self._temp_locked)
-        locked: list[str] = []
         self._temp = Usd.Stage.CreateInMemory()
-        self._temp_reference = False
-        self._temp_locked = locked
+        self._temp_layer = None
         try:
             yield self._temp
         finally:
-            self._temp, self._temp_reference, self._temp_locked = previous
-            if not debug:
-                for layer_id in locked:
-                    hou.lop.removeLockedGeometry(layer_id)
-
-    def _copy_source(self, src: Usd.Stage, dst: JbContainer, source: str) -> None:
-        """Author the temp scene into the container as references to USD files on disk."""
-        parent = self.geometry_path(self.container_root(dst))
-        self._ensure_prim(dst, parent)
-        if self._temp_reference:
-            self._reference_source(dst, parent, source)
-        else:
-            self._reference_source(dst, parent, self._save_geometry(src, dst))
+            if not debug and self._temp_layer:
+                hou.lop.removeLockedGeometry(self._temp_layer)
+            self._temp = None
+            self._temp_layer = None
 
     def _save_geometry(self, converted: Usd.Stage, container: JbContainer) -> str:
         """Write the converted geometry as one usdc next to the layer of its container."""
@@ -51,13 +38,15 @@ class JbSceneTemp(JbSceneInstance):
             raise hou.NodeError(f"Cannot write asset geometry: {path}")
         return path
 
-    def _reference_source(self, stage: Usd.Stage, path: str, source: str) -> None:
-        """Keep the original USD file on disk; author replacements as opinions."""
+    def _reference_source(self, container: JbContainer, source: str) -> None:
+        """Keep one USD file on disk as the geometry of a container."""
+        parent = self.geometry_path(self.container_root(container))
+        self._ensure_prim(container, parent)
         original = Usd.Stage.Open(source)
         if original is None:
             raise hou.NodeError(f"Cannot open USD source: {source}")
         for root in original.GetPseudoRoot().GetChildren():
             if root.GetName() == "HoudiniLayerInfo":
                 continue
-            prim = stage.DefinePrim(f"{path}/{root.GetName()}")
+            prim = container.DefinePrim(f"{parent}/{root.GetName()}")
             prim.GetReferences().AddReference(source, root.GetPath())

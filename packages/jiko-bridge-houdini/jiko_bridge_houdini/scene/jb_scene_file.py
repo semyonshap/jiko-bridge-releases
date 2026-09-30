@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import hou
-from jiko_bridge_houdini.jb_types import MODEL_EXTENSIONS, USD_EXTENSIONS
+from jiko_bridge_houdini.jb_types import CONVERTED_EXTENSIONS
 from jiko_bridge_houdini.jb_utils import source_path
 from jiko_bridge_houdini.scene.jb_scene_instance import FBX_TRANSLATION, VECTOR_TYPES
 from jiko_bridge_houdini.scene.jb_scene_temp import JbSceneTemp
@@ -15,29 +15,24 @@ class JbSceneFile(JbSceneTemp):
     """Houdini implementation of file operations."""
 
     def import_file(self, file_path: str) -> bool:
-        """Import one model file into the scene the import is running in."""
+        """Convert one model file into the temporary scene of the running import."""
         stage = self._temp
         if stage is None:
             raise hou.NodeError("A model import needs a temporary scene.")
         source = source_path(file_path)
         suffix = Path(source).suffix.lower()
-        if suffix not in MODEL_EXTENSIONS:
+        if suffix not in CONVERTED_EXTENSIONS:
             self.message(
-                f"Cannot import {source}: {suffix or 'no extension'} is not a model format"
+                f"Cannot import {source}: {suffix or 'no extension'} is not a convertible format"
             )
             return False
-        if suffix in USD_EXTENSIONS:
-            # The container references the source file instead of copying its geometry.
-            self._temp_reference = True
-            stage.GetRootLayer().subLayerPaths.append(source)
-            return True
         geometry = hou.Geometry()
         geometry.loadFromFile(source)
         units = self._file_units(source, suffix)
         if units != 1.0:
             geometry.transform(hou.hmath.buildScale(units, units, units))
         layer_id = hou.lop.addLockedGeometry(self.prim_name(source), geometry)
-        self._temp_locked.append(layer_id)
+        self._temp_layer = layer_id
         stage.GetRootLayer().subLayerPaths.append(layer_id)
         self._scale_translations(stage, units)
         return True

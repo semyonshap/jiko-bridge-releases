@@ -7,6 +7,7 @@ from jiko_bridge_houdini.jb_types import (
     GEOMETRY_PRIM,
     JbContainer,
     JbData,
+    JbMaterial,
     JbObject,
     JbSceneBase,
 )
@@ -108,3 +109,15 @@ class JbSceneObjects(JbSceneBase):
     def get_materials_from_objects(self, objects):
         """Houdini selects materials by node, not by container contents."""
         return []
+
+    def move_objects_to_container(self, _objects: list[JbObject], _container: JbContainer) -> None:
+        """Houdini places its objects by prim path instead of re-parenting them."""
+        self.logger.warning("Houdini object move is not implemented.")
+
+    def get_depth(self, _obj: JbData) -> int:
+        """Every prim of a layer is authored in order, so there is no depth to sort by."""
+        return 0
+
+    def merge_duplicates_materials(self, _material: JbMaterial) -> None:
+        """Houdini material de-duplication is not implemented."""
+        self.logger.warning("Houdini material merge is not implemented.")

@@ -130,7 +130,7 @@ class JbAssetImporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObje
             container = self.scene.create_container(asset, file)
             self.scene.import_with_temp(cast(str, file.filepath), container)
         else:
-            self.scene.create_instance(container, cast(str, asset.asset_name))
+            self.scene.create_instance(container, asset)
         return container
 
     def _convert_to_instances(self, container: JbContainerT) -> None:
@@ -145,7 +145,7 @@ class JbAssetImporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObje
             for obj in cast(List[JbObjectT], self.scene.walk([current])):
                 asset_model = None
                 for name in self.scene.get_names_from_placeholder(obj):
-                    asset_model = self._resolve_asset(name)
+                    asset_model = self._resolve_asset(name, search=False)
                     if asset_model:
                         break
                 if not asset_model:
@@ -155,13 +155,17 @@ class JbAssetImporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObje
                     queue.append(asset_container)
             self.scene.cleanup_container(current)
 
-    def _resolve_asset(self, name: str) -> AssetModel | None:
-        """Resolve an asset by bundled name or by search, caching misses too."""
+    def _resolve_asset(self, name: str, search: bool = True) -> AssetModel | None:
+        """Resolve an asset by bundled name or by search, caching misses too.
+
+        A name without the bundle marker is looked up by search only when *search*
+        allows it, so the name of a geometry group stays a name, not an asset.
+        """
         if name in self._asset_cache:
             return self._asset_cache[name]
         query = AssetModel.from_string(name)
         asset = self.api.get_asset(query) if query else None
-        if asset is None:
+        if asset is None and (search or query):
             asset = self.api.get_asset_by_search(name)
         self._asset_cache[name] = asset
         return asset
@@ -179,9 +183,11 @@ class JbAssetImporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObje
             created = True
         if asset_container is None:
             return None
+        if self.scene.is_equal_container(asset_container, container):
+            return None
         self.scene.create_instance(
             asset_container,
-            cast(str, asset_model.asset_name),
+            asset_model,
             parent=container,
             source=obj,
         )

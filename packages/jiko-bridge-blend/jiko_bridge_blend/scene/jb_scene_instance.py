@@ -12,8 +12,8 @@ from .jb_scene_container import JbSceneContainer
 class JbSceneInstance(JbSceneContainer):
     """Instance and placeholder management for Blender."""
 
-    def create_instance(self, container, name, parent=None, source=None) -> JbObject:
-        empty = bpy.data.objects.new(f"Instance_{name}", None)
+    def create_instance(self, container, asset, parent=None, source=None) -> JbObject:
+        empty = bpy.data.objects.new(self.instance_name(asset), None)
         empty.instance_type = "COLLECTION"
         empty.instance_collection = container
         empty["jb_pack_name"] = container.get("jb_pack_name", "")

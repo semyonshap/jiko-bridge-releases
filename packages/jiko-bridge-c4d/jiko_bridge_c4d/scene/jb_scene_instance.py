@@ -8,9 +8,9 @@ from jiko_bridge_c4d.scene.jb_scene_container import JbSceneContainer
 class JbSceneInstance(JbSceneContainer):
     """Instance and placeholder management for Cinema 4D."""
 
-    def create_instance(self, container, name, parent=None, source=None):
+    def create_instance(self, container, asset, parent=None, source=None):
         instance = c4d.BaseObject(c4d.Oinstance)
-        instance.SetName(f"Instance_{name}")
+        instance.SetName(self.instance_name(asset))
         instance[c4d.INSTANCEOBJECT_LINK] = container
         instance[c4d.INSTANCEOBJECT_RENDERINSTANCE_MODE] = 1
         for key, bc in container.GetUserDataContainer():

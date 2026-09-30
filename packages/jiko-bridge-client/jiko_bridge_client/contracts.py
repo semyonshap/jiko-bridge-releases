@@ -1,3 +1,4 @@
+import hashlib
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from logging import Logger
@@ -111,6 +112,10 @@ class JbSceneABC(  # pylint: disable=too-many-public-methods
         """Stable key of one container, unique inside the scene."""
         return str(id(container))
 
+    def is_equal_container(self, a: JbContainerT, b: JbContainerT) -> bool:
+        """Whether two containers are the same one of the scene."""
+        return self.container_key(a) == self.container_key(b)
+
     @staticmethod
     def container_name(asset: AssetModel) -> str:
         """Name the scene gives to the container that holds the contents of an asset."""
@@ -170,11 +175,19 @@ class JbSceneABC(  # pylint: disable=too-many-public-methods
     # Instance
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def instance_name(asset: AssetModel, location: str = "") -> str:
+        """Name the scene gives to one instance of an asset, unique per location."""
+        if not location:
+            return f"Instance_{asset.asset_name}"
+        digest = hashlib.sha256(location.encode()).hexdigest()[:5]
+        return f"Instance_{asset.asset_name}_{digest}"
+
     @abstractmethod
     def create_instance(
         self,
         container: JbContainerT,
-        name: str,
+        asset: AssetModel,
         parent: Optional[JbContainerT] = None,
         source: Optional[JbObjectT] = None,
     ) -> Optional[JbObjectT]:

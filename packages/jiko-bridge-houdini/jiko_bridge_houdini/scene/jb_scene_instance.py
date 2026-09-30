@@ -4,7 +4,7 @@ from typing import Any, Optional
 import hou
 from jiko_bridge_houdini.jb_types import INSTANCES_PRIM, JbObject
 from jiko_bridge_houdini.scene.jb_scene_container import JbSceneContainer
-from pxr import Gf, Tf, Usd, UsdGeom, UsdShade
+from pxr import Gf, Usd, UsdGeom, UsdShade
 
 FBX_TRANSLATION = "primvars:fbx_translation"
 FBX_ROTATION = "primvars:fbx_rotation"
@@ -18,12 +18,6 @@ class JbSceneInstance(JbSceneContainer):
     def instances_path(self, root: str) -> str:
         """Where a container keeps the instances of its placeholders."""
         return f"{root}/{INSTANCES_PRIM}"
-
-    @staticmethod
-    def instance_name(name: str, location: str) -> str:
-        """Name of one instance, as Cinema 4D and Blender name theirs."""
-        part = Tf.MakeValidIdentifier(location.strip("/").replace("/", "_")) or "placeholder"
-        return f"Instance_{name}_{part}"
 
     def instance_path(self, root: str, name: str) -> str:
         """Where one instance prim lives inside a container."""
@@ -57,16 +51,22 @@ class JbSceneInstance(JbSceneContainer):
         )
         return list(transform.asTuple())
 
-    def placeholder_names(self, prim: Usd.Prim, time: Usd.TimeCode) -> list[str]:
-        """Use material and selection names, as the C4D and Blender importers do."""
+    def get_names_from_placeholder(self, obj) -> list[str]:
+        """The asset names a placeholder asks for; a container asks for nothing."""
+        if not isinstance(obj, Usd.Prim) or not obj.IsA(UsdGeom.Mesh):
+            return []
+        time = Usd.TimeCode.Default()
+        points = UsdGeom.Mesh(obj).GetPointsAttr().Get(time)
+        if points is None or len(points) != 4:
+            return []
         names: list[str] = []
 
         def add(value: str) -> None:
-            name = value.replace("\\", "/").rsplit("/", 1)[-1]
+            name = value.rsplit("/", 1)[-1]
             if name and name not in names:
                 names.append(name)
 
-        candidates = [prim] + [child for child in prim.GetChildren() if child.IsA(UsdGeom.Subset)]
+        candidates = [obj] + [child for child in obj.GetChildren() if child.IsA(UsdGeom.Subset)]
         for candidate in candidates:
             material, _ = UsdShade.MaterialBindingAPI(candidate).ComputeBoundMaterial()
             if material:
@@ -81,24 +81,18 @@ class JbSceneInstance(JbSceneContainer):
                     for item in value:
                         if isinstance(item, str):
                             add(item)
-            if candidate != prim:
+            if candidate != obj:
                 add(str(candidate.GetMetadata("displayName") or candidate.GetName()))
-        add(str(prim.GetMetadata("displayName") or prim.GetName()))
+        add(str(obj.GetMetadata("displayName") or obj.GetName()))
         return names
 
-    def get_names_from_placeholder(self, obj) -> list[str]:
-        """The asset names a placeholder asks for."""
-        if not obj:
-            return []
-        return self.placeholder_names(obj, Usd.TimeCode.Default())
-
-    def create_instance(self, container, name, parent=None, source=None) -> Optional[JbObject]:
+    def create_instance(self, container, asset, parent=None, source=None) -> Optional[JbObject]:
         """An instance of an asset container, authored at once into its parent."""
         if parent is None or not source:
             return None
         root = self.container_root(parent)
         location = str(source.GetPath())[len(self.geometry_path(root)) :]
-        prim_name = self.instance_name(name, location)
+        prim_name = self.instance_name(asset, location)
         instance = UsdGeom.Xform.Define(parent, self.instance_path(root, prim_name)).GetPrim()
         instance.SetInstanceable(False)
         matrix = self.placeholder_transform(source, Usd.TimeCode.Default())

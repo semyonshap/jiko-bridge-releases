@@ -10,52 +10,57 @@ from .jb_scene_objects import JbSceneObjects
 class JbSceneContainer(JbSceneObjects):
     """Container and asset management: collections, metadata."""
 
-    def get_container(self, asset) -> Optional[JbContainer]:
-        root = self.get_or_create_container("Assets")
-        name = f"Asset_{asset.pack_name}_{asset.asset_name}"
+    def get_container(self, asset: AssetModel) -> Optional[JbContainer]:
+        """The container collection of an asset, once it already holds its model."""
+        collection = bpy.data.collections.get(self.container_name(asset))
+        if collection is None or not collection.objects:
+            return None
+        return collection
 
-        for col in root.children:
-            if isinstance(col, bpy.types.Collection) and col.name == name:
-                return col
+    def create_container(self, asset: AssetModel, file=None) -> JbContainer:
+        """The container collection of an asset, linked under the Assets root."""
+        root = self._ensure_null("Assets")
 
-        return None
+        container = self._ensure_null(self.container_name(asset), parent=root)
+        self.set_asset_data(container, asset, file)
+        return container
 
-    def get_or_create_container(self, name, parent=None) -> JbContainer:
-        ctx = self.source
-        col = bpy.data.collections.get(name)
-        if not col:
-            col = bpy.data.collections.new(name)
-            if parent is not None:
-                parent.children.link(col)
-            else:
-                scene = ctx.scene
-                if scene:
-                    root_col = scene.collection
-                    if root_col is not None:
-                        root_col.children.link(col)
+    def _ensure_null(self, name: str, parent=None) -> JbContainer:
+        """The collection of the given name, created and linked under the parent when absent."""
+        scene = self.source.scene
+        collection = bpy.data.collections.get(name)
+        if collection is None:
+            collection = bpy.data.collections.new(name)
+            collection.color_tag = "COLOR_04"
 
-            col.color_tag = "COLOR_04"
-
-        return col
-
-    def get_or_create_asset_container(self, asset, file=None) -> tuple[JbContainer, bool]:
-        root = self.get_or_create_container("Assets")
-        name = f"Asset_{asset.pack_name}_{asset.asset_name}"
-
-        col = self.get_or_create_container(name, parent=root)
-        self.set_asset_data(col, asset, file)
-
-        if name not in [c.name for c in root.children]:
+        if parent is None:
+            parent = scene.collection if scene else None
+        if parent is not None and name not in {child.name for child in parent.children}:
             try:
-                root.children.link(col)
+                parent.children.link(collection)
             except RuntimeError:
                 pass
 
-        existed = True
-        if len(col.objects) == 0:
-            existed = False
+        return collection
 
-        return col, existed
+    def apply_solo(self, containers: list[JbContainer]) -> None:
+        """Show only the given containers and frame them in the viewport."""
+        root = bpy.data.collections.get("Assets")
+        if root is None:
+            return
+
+        # Hide root
+        self.set_container_visibility(root, True)
+
+        # Hide every child
+        for child in root.children:
+            self.set_container_visibility(child, False)
+
+        # Show the soloed ones
+        for container in containers:
+            self.set_container_visibility(container, True)
+
+        bpy.ops.view3d.view_all()
 
     def get_containers_from_objects(self, objects) -> list[JbContainer]:
         containers: set[JbContainer] = set()
@@ -111,17 +116,3 @@ class JbSceneContainer(JbSceneObjects):
                 bpy.data.objects.remove(obj, do_unlink=True)
         for child in container.children:
             self.cleanup_container(child)
-
-    def move_objects_to_container(self, objects, container) -> None:
-        moved = set()
-        objects = self.walk(objects)
-
-        for obj in objects:
-            if isinstance(obj, bpy.types.Object):
-                if obj in moved:
-                    continue
-                moved.add(obj)
-                for col in list(obj.users_collection):
-                    col.objects.unlink(obj)
-                if container not in obj.users_collection:
-                    container.objects.link(obj)

@@ -1,7 +1,7 @@
 SHELL := cmd.exe
 
 # Python
-VENV_BIN     := venv\Scripts
+VENV_BIN     := .venv\Scripts
 PYTHON       := $(VENV_BIN)\python.exe
 PIP          := $(VENV_BIN)\pip.exe
 VENV_ACTIVATE := $(VENV_BIN)\activate.bat

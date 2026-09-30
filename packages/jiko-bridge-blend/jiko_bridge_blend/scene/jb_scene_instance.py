@@ -12,7 +12,7 @@ from .jb_scene_container import JbSceneContainer
 class JbSceneInstance(JbSceneContainer):
     """Instance and placeholder management for Blender."""
 
-    def create_instance(self, container, name) -> JbObject:
+    def create_instance(self, container, name, parent=None, source=None) -> JbObject:
         empty = bpy.data.objects.new(f"Instance_{name}", None)
         empty.instance_type = "COLLECTION"
         empty.instance_collection = container
@@ -23,6 +23,10 @@ class JbSceneInstance(JbSceneContainer):
         scene = self.source.scene
         if scene is not None and scene.collection is not None:
             scene.collection.objects.link(empty)
+        if source is not None:
+            empty.matrix_world = source.matrix_world.copy()
+        if parent is not None:
+            self.move_objects_to_container([empty], parent)
         return empty
 
     def create_placeholder(self, asset_model, transform, source) -> JbObject:

@@ -3,7 +3,6 @@ from jiko_bridge_houdini.jb_settings import JbSettings
 from jiko_bridge_houdini.jb_types import JbContainer, JbSource
 from jiko_bridge_houdini.jb_utils import source_path
 from jiko_bridge_houdini.scene.jb_scene_file import JbSceneFile
-from pxr import Usd
 
 
 class JbScene(JbSceneFile):
@@ -12,9 +11,8 @@ class JbScene(JbSceneFile):
     def __init__(self, source: JbSource):
         self.node = source
         self.settings = JbSettings(source)
-        self._source = None
+        self._containers = {}
         self._temp = None
-        self._temp_units = 1.0
         self._temp_reference = False
         self._temp_locked = []
         self.messages.clear()
@@ -24,18 +22,14 @@ class JbScene(JbSceneFile):
         self._save_layers()
 
     def _save_layers(self) -> None:
-        """Write every asset layer the import sublayered; unchanged layers are skipped."""
-        if self._source is None:
-            return
-        for path in self._source.GetRootLayer().subLayerPaths:
-            self._save_layer(path)
+        """Write every container the import opened; unchanged layers are skipped."""
+        for container in self._containers.values():
+            self._save_container(container)
 
     @property
-    def source(self) -> Usd.Stage:
-        """The in-memory stage every container of the running import is authored into."""
-        if self._source is None:
-            self._source = Usd.Stage.CreateInMemory()
-        return self._source
+    def source(self) -> JbSource:
+        """The node the running import is driven from."""
+        return self.node
 
     def import_with_temp(self, file_path: str, target: JbContainer) -> None:
         """Import one model file in an isolated scene, then author it into the container."""
@@ -43,7 +37,8 @@ class JbScene(JbSceneFile):
             if not self.import_file(file_path):
                 self.logger.warning("No objects imported for file: %s", file_path)
                 return
-            self._copy_source(tmp_stage, target, source_path(file_path))
+            source = source_path(file_path)
+            self._copy_source(tmp_stage, target, source)
 
     def export_with_temp(self, _src, _ext):
         """Houdini has no asset export yet."""

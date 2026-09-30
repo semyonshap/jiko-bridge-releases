@@ -125,11 +125,12 @@ class JbAssetImporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObje
             self.scene.finish_asset(container)
 
     def _create_model(self, asset: AssetModel, file: AssetFile) -> JbContainerT:
-        container, exists = self.scene.get_or_create_asset_container(asset, file)
-        if exists:
-            self.scene.create_instance(container, cast(str, asset.asset_name))
-        else:
+        container = self.scene.get_container(asset)
+        if container is None:
+            container = self.scene.create_container(asset, file)
             self.scene.import_with_temp(cast(str, file.filepath), container)
+        else:
+            self.scene.create_instance(container, cast(str, asset.asset_name))
         return container
 
     def _convert_to_instances(self, container: JbContainerT) -> None:
@@ -172,16 +173,17 @@ class JbAssetImporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObje
         created = False
         if not asset_container:
             for file in asset_model.files:
-                asset_container, exists = self.scene.get_or_create_asset_container(
-                    asset_model, file
-                )
-                if not exists:
+                asset_container = self.scene.create_container(asset_model, file)
+                if self.scene.get_container(asset_model) is None:
                     self.scene.import_with_temp(cast(str, file.filepath), asset_container)
             created = True
         if asset_container is None:
             return None
-        instance = self.scene.create_instance(asset_container, cast(str, asset_model.asset_name))
-        self.scene.copy_object_transform(instance, obj)
-        self.scene.move_objects_to_container([instance], container)
+        self.scene.create_instance(
+            asset_container,
+            cast(str, asset_model.asset_name),
+            parent=container,
+            source=obj,
+        )
         self.scene.remove_object(obj)
         return asset_container if created else None

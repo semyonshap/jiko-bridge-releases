@@ -5,8 +5,10 @@ from pathlib import Path
 import hou
 from jiko_bridge_houdini.jb_types import MODEL_EXTENSIONS, USD_EXTENSIONS
 from jiko_bridge_houdini.jb_utils import source_path
+from jiko_bridge_houdini.scene.jb_scene_instance import FBX_TRANSLATION, VECTOR_TYPES
 from jiko_bridge_houdini.scene.jb_scene_temp import JbSceneTemp
 from jiko_bridge_houdini.utils.jb_utils_fbx import DEFAULT_METERS_PER_UNIT, fbx_meters_per_unit
+from pxr import Usd
 
 
 class JbSceneFile(JbSceneTemp):
@@ -34,11 +36,25 @@ class JbSceneFile(JbSceneTemp):
         units = self._file_units(source, suffix)
         if units != 1.0:
             geometry.transform(hou.hmath.buildScale(units, units, units))
-        self._temp_units = units
         layer_id = hou.lop.addLockedGeometry(self.prim_name(source), geometry)
         self._temp_locked.append(layer_id)
         stage.GetRootLayer().subLayerPaths.append(layer_id)
+        self._scale_translations(stage, units)
         return True
+
+    def _scale_translations(self, stage: Usd.Stage, units: float) -> None:
+        """Bake the source units into the FBX translations of one converted geometry."""
+        if units == 1.0:
+            return
+        for prim in stage.Traverse():
+            attribute = prim.GetAttribute(FBX_TRANSLATION)
+            value = attribute.Get() if attribute else None
+            if value is None:
+                continue
+            if isinstance(value, VECTOR_TYPES):
+                attribute.Set(value * units)
+            else:
+                attribute.Set([item * units for item in value])
 
     def _import_fbx(self, file_path: str) -> bool:
         """Import one FBX source through the common model path."""

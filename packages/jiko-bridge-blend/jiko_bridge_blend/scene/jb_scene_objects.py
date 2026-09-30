@@ -101,11 +101,22 @@ class JbSceneObjects(JbSceneBase):
             materials.update(mat for mat in getattr(data, "materials", ()) if mat is not None)
         return list(materials)
 
-    def copy_object_transform(self, obj, target_obj) -> None:
-        obj.matrix_world = target_obj.matrix_world.copy()
-
     def remove_object(self, obj) -> None:
         bpy.data.objects.remove(obj, do_unlink=True)
+
+    def move_objects_to_container(self, objects, container) -> None:
+        moved = set()
+        objects = self.walk(objects)
+
+        for obj in objects:
+            if isinstance(obj, bpy.types.Object):
+                if obj in moved:
+                    continue
+                moved.add(obj)
+                for col in list(obj.users_collection):
+                    col.objects.unlink(obj)
+                if container not in obj.users_collection:
+                    container.objects.link(obj)
 
     def get_children(self, obj) -> list[JbObject | JbContainer]:
         if isinstance(obj, bpy.types.Object):

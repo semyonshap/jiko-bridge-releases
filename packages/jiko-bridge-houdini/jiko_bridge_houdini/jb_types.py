@@ -1,7 +1,6 @@
 """Types and file formats specific to Houdini."""
 
-from dataclasses import dataclass, field
-from typing import Any, List, Optional, TypeAlias, TypedDict
+from typing import TypeAlias
 
 import hou
 from jiko_bridge_client import (
@@ -12,29 +11,13 @@ from jiko_bridge_client import (
     JbSceneABC,
     JbSettingsABC,
 )
+from pxr import Usd
 
+JbObject: TypeAlias = Usd.Prim
+JbContainer: TypeAlias = Usd.Stage
 JbSource: TypeAlias = hou.OpNode
 JbMatrix: TypeAlias = hou.Matrix4
 JbMaterial: TypeAlias = hou.OpNode
-
-
-@dataclass(eq=False)
-class JbContainer:
-    """An asset authored as a container prim inside its own USD layer."""
-
-    layer: str
-    root: str
-    asset: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(eq=False)
-class JbObject:
-    """A placeholder parsed from a file, or an instance awaiting authoring."""
-
-    data: dict[str, Any]
-    parent: Optional["JbContainer"] = None
-    target: Optional["JbContainer"] = None
-
 
 JbData: TypeAlias = JbContainer | JbObject | JbMaterial
 
@@ -54,23 +37,9 @@ CONVERTED_EXTENSIONS = (".fbx", ".abc")
 MODEL_EXTENSIONS = CONVERTED_EXTENSIONS + USD_EXTENSIONS
 
 
-class Placeholder(TypedDict):
-    """A source object and the names and placement used to resolve its asset."""
-
-    object: str
-    names: List[str]
-    transform: Optional[List[float]]
-
-
 GEOMETRY_PRIM = "geometry"
+GEOMETRY_FILE = "geo.usdc"
 INSTANCES_PRIM = "instances"
 ASSETS_PRIM = "assets"
 ASSETS_PARM = "assets"
-FILES_PARM = "num_files"
 ASSET_KIND = "component"
-IMPORT_NODE = "import_assets"
-TARGET_LAYER_ATTR = "jb:targetLayer"
-TARGET_PRIM_ATTR = "jb:targetPrim"
-PLACEHOLDER_SOURCE_ATTR = "jb:placeholderSource"
-PLACEHOLDER_NAMES_ATTR = "jb:placeholderNames"
-PLACEHOLDER_TRANSFORM_ATTR = "jb:placeholderTransform"

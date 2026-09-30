@@ -1,6 +1,6 @@
 """Solo workflow shared by every Jiko Bridge DCC plugin."""
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from logging import Logger
 from typing import Generic, List, cast
 
@@ -20,8 +20,8 @@ class JbAssetSoloABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT,
     """Base class for the solo command holding the shared solo workflow.
 
     The workflow picks the containers to isolate, keeps the history on the
-    settings, and leaves only the DCC-specific visibility work to
-    ``_apply_solo``.
+    settings, and leaves the DCC-specific visibility work to the scene, which
+    owns ``apply_solo``.
     """
 
     scene_class: type[JbSceneABC[JbSourceT, JbMatrixT, JbContainerT, JbObjectT, JbMaterialT]]
@@ -42,7 +42,7 @@ class JbAssetSoloABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT,
         """Isolate the selection, or the previous selection when it is empty."""
         containers = self._solo_selection()
         if containers:
-            self._apply_solo(containers)
+            self.scene.apply_solo(containers)
 
     def _solo_selection(self) -> list[JbContainerT]:
         objects = cast(List[JbObjectT], self.scene.get_selection())
@@ -71,7 +71,3 @@ class JbAssetSoloABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObjectT,
             return []
         settings.save_solo(entries[1:])
         return entries[1]
-
-    @abstractmethod
-    def _apply_solo(self, containers: list[JbContainerT]) -> None:
-        """Show the given containers and hide everything else."""

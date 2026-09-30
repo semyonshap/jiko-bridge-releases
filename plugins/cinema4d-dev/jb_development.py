@@ -8,8 +8,7 @@ JIKO_BRIDGE_DEV_ID = 1096087
 JIKO_BRIDGE_DEV_NAME = "Jiko Bridge Reload (dev)"
 
 _OWNED_PREFIXES = ("jiko_bridge_c4d", "jiko_bridge_client")
-# This controller and the registered release command must survive a reload.
-_STABLE_MODULES = (__name__, "jiko_bridge_c4d.jb_plugin")
+_STABLE_MODULES = (__name__,)
 
 
 def _owned(module_name: str) -> bool:
@@ -61,17 +60,19 @@ def reload_implementation() -> bool:
     """Replace source modules while preserving the registered C4D commands."""
     stable = set(_STABLE_MODULES)
     previous = {name: mod for name, mod in sys.modules.items() if _owned(name)}
+    stale = previous.get("jiko_bridge_c4d.jb_plugin")
     for name in previous:
         if name not in stable:
             sys.modules.pop(name, None)
     importlib.invalidate_caches()
     try:
         package = importlib.import_module("jiko_bridge_c4d")
-        commands = importlib.import_module("jiko_bridge_c4d.jb_commands")
-        # Commit only after all new imports succeed. Execute() uses this global.
         plugin = importlib.import_module("jiko_bridge_c4d.jb_plugin")
         package.jb_plugin = plugin  # type: ignore[attr-defined]
-        plugin.JbCommandsPopup = commands.JbCommandsPopup  # type: ignore[attr-defined]
+        # Commit only after all new imports succeed: the registered command looks
+        # JbCommandsPopup up in the globals of the module it was registered from.
+        if stale is not None and stale is not plugin:
+            stale.JbCommandsPopup = plugin.JbCommandsPopup  # type: ignore[attr-defined]
     except Exception:
         for name in list(sys.modules):
             if _owned(name):

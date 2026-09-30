@@ -131,7 +131,7 @@ class JbAssetExporterABC(ABC, Generic[JbSourceT, JbMatrixT, JbContainerT, JbObje
             return
 
         for file in asset.files:
-            container, _ = self.scene.get_or_create_asset_container(asset, file)
+            container = self.scene.create_container(asset, file)
             self.scene.move_objects_to_container(cast(List[JbObjectT], objects), container)
             self.logger.info(
                 "Asset '%s' created with type '%s'.", asset.asset_name, file.asset_type

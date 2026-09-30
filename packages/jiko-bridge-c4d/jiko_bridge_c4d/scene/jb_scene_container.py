@@ -9,17 +9,28 @@ from jiko_bridge_client import AssetModel
 class JbSceneContainer(JbSceneObjects):
     """Container and asset management: null objects, user data, collections."""
 
-    def get_container(self, asset):
-        doc = self.source
-        name = f"Asset_{asset.pack_name}_{asset.asset_name}"
-        return doc.SearchObject(name)
+    def get_container(self, asset: AssetModel) -> Optional[JbContainer]:
+        """The container null of an asset, once it already holds its model."""
+        container = self.source.SearchObject(self.container_name(asset))
+        if container is None or not container.GetChildren():
+            return None
+        return container
 
-    def get_or_create_container(self, name, parent=None) -> tuple[JbContainer, bool]:
+    def create_container(self, asset: AssetModel, file=None) -> JbContainer:
+        """The container null of an asset, created under the protected Assets root."""
+        root = self._ensure_collection("Assets")
+        self._set_protection_tag(root)
+
+        container = self._ensure_collection(self.container_name(asset), parent=root)
+        self._set_protection_tag(container)
+        self.set_asset_data(container, asset, file)
+        return container
+
+    def _ensure_collection(self, name: str, parent=None) -> JbContainer:
+        """The null object of the given name, created under the parent when absent."""
         doc = self.source
         obj = doc.SearchObject(name)
-        existed = obj is not None
-
-        if not existed:
+        if obj is None:
             obj = c4d.BaseObject(c4d.Onull)
             if parent is not None:
                 obj.InsertUnder(parent)
@@ -31,29 +42,7 @@ class JbSceneContainer(JbSceneObjects):
         obj[c4d.ID_BASELIST_ICON_COLORIZE_MODE] = c4d.ID_BASELIST_ICON_COLORIZE_MODE_CUSTOM
         obj[c4d.ID_BASELIST_ICON_COLOR] = c4d.Vector(0.071, 0.949, 0.85)
 
-        return obj, existed
-
-    def get_or_create_asset_container(self, asset, file=None) -> tuple[JbContainer, bool]:
-        """Get or create an asset container null with user data from the asset and file."""
-        root_null, _ = self.get_or_create_container("Assets")
-        self._set_protection_tag(root_null)
-
-        asset_null, asset_existed = self.get_or_create_container(
-            f"Asset_{asset.pack_name}_{asset.asset_name}", parent=root_null
-        )
-
-        self._set_protection_tag(asset_null)
-
-        self._set_user_data(asset_null, "vaultName", asset.vault_name)
-        self._set_user_data(asset_null, "packName", asset.pack_name)
-        self._set_user_data(asset_null, "assetName", asset.asset_name)
-        if file:
-            self._set_user_data(asset_null, "assetType", file.asset_type)
-
-        if len(asset_null.GetChildren()) == 0:
-            asset_existed = False
-
-        return asset_null, asset_existed
+        return obj
 
     def set_asset_data(self, container, asset, file=None) -> None:
         self._set_user_data(container, "vaultName", asset.vault_name)
@@ -82,6 +71,22 @@ class JbSceneContainer(JbSceneObjects):
             value = src[key]
             self._set_user_data(dst, name, value)
 
+    def apply_solo(self, containers: list[JbContainer]) -> None:
+        """Show only the given containers and frame them in the viewport."""
+        root = self.source.SearchObject("Assets")
+        if root is None:
+            return
+
+        self.set_container_visibility(root, False)
+
+        for child in root.GetChildren():
+            self.set_container_visibility(child, None)
+
+        for container in containers:
+            self.set_container_visibility(container, True)
+
+        c4d.CallCommand(12288)
+
     def get_containers_from_objects(self, objects) -> list[JbContainer]:
         return [
             obj
@@ -100,12 +105,6 @@ class JbSceneContainer(JbSceneObjects):
             if self.get_asset_data_from_container(linked) is not None:
                 containers.append(linked)
         return containers
-
-    def move_objects_to_container(self, objects, container) -> None:
-        """Unified API: re-parents objects under asset null."""
-        for obj in objects:
-            obj.Remove()
-            obj.InsertUnder(container)
 
     def cleanup_container(self, container) -> None:
         count = 0

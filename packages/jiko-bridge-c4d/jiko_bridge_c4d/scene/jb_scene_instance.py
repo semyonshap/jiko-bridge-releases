@@ -8,7 +8,7 @@ from jiko_bridge_c4d.scene.jb_scene_container import JbSceneContainer
 class JbSceneInstance(JbSceneContainer):
     """Instance and placeholder management for Cinema 4D."""
 
-    def create_instance(self, container, name):
+    def create_instance(self, container, name, parent=None, source=None):
         instance = c4d.BaseObject(c4d.Oinstance)
         instance.SetName(f"Instance_{name}")
         instance[c4d.INSTANCEOBJECT_LINK] = container
@@ -16,6 +16,10 @@ class JbSceneInstance(JbSceneContainer):
         for key, bc in container.GetUserDataContainer():
             self._set_user_data(instance, bc[c4d.DESC_NAME], container[key])
         self.source.InsertObject(instance)
+        if source is not None:
+            instance.SetMg(source.GetMg())
+        if parent is not None:
+            self.move_objects_to_container([instance], parent)
         instance.SetBit(c4d.BIT_ACTIVE)
         return instance
 

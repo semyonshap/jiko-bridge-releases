@@ -16,9 +16,9 @@ help: ## Show this help message
 	@awk '/^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-20s\033[0m %s\n", $$1, substr($$0, index($$0, "##")+3)}' $(MAKEFILE_LIST)
 
 venv:
-	python -m venv venv
+	python -m venv .venv
+	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install --group dev
-	$(PIP) install -r requirements.txt
 	make pkg-install
 
 sync-deps: pkg-install ## Install/update dev dependency group

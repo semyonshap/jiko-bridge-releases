@@ -1,86 +1,37 @@
-import c4d
-from jiko_bridge_c4d.commands.jb_asset_exporter import JbAssetExporter
-from jiko_bridge_c4d.commands.jb_asset_importer import JbAssetImporter
-from jiko_bridge_c4d.commands.jb_asset_solo import JbAssetSolo
-from jiko_bridge_c4d.jb_settings import JbSettingsDialog
-from jiko_bridge_c4d.jb_types import JbSource
+"""Commands of the Cinema 4D plugin: the shared workflows bound to this document."""
 
-IDC_POPUP_ACTION_IMPORT = 2001
-IDC_POPUP_ACTION_EXPORT = 2002
-IDC_POPUP_ACTION_SOLO = 2003
-IDC_POPUP_ACTION_SETTINGS = 2005
+from jiko_bridge_c4d.jb_settings import JbSettings
+from jiko_bridge_c4d.jb_types import (
+    JbAssetExporterBase,
+    JbAssetImporterBase,
+    JbAssetSoloBase,
+    JbSource,
+)
+from jiko_bridge_c4d.materials.jb_material_importer import JbMaterialImporter
+from jiko_bridge_c4d.scene.jb_scene import JbScene
 
 
-class JbCommandsPopup:
-    """icon reference:
-    https://developers.maxon.net/docs/py/2024_3_0/modules/c4d.bitmaps/RESOURCEIMAGE.html
-    """
+class JbAssetImporter(JbAssetImporterBase):
+    """Handles importing assets from Jiko Bridge into scene."""
 
-    def __init__(self, source: JbSource):
-        self.doc = source
-        self.asset_import = JbAssetImporter(source)
-        self.asset_export = JbAssetExporter(source)
-        self.asset_solo = JbAssetSolo(source)
-        self._settings_dialog = JbSettingsDialog(source)
+    scene_class = JbScene
+    materials_class = JbMaterialImporter
 
-    def export_asset(self):
-        """Export asset to Jiko Bridge."""
-        self.doc.StartUndo()
-        try:
-            msg = self.asset_export.export_message()
-            if c4d.gui.QuestionDialog(msg):
-                self.asset_export.export_asset()
-        finally:
-            self.doc.EndUndo()
-            c4d.EventAdd()
 
-    def import_asset(self):
-        """Import asset from Jiko Bridge."""
-        self.doc.StartUndo()
-        try:
-            msg = self.asset_import.import_message()
-            if c4d.gui.QuestionDialog(msg):
-                self.asset_import.import_assets()
-        finally:
-            self.doc.EndUndo()
-            c4d.EventAdd()
+class JbAssetExporter(JbAssetExporterBase):
+    """Export asset class"""
 
-    def solo(self):
-        """Solo mode with history"""
-        self.doc.StartUndo()
-        try:
-            self.asset_solo.solo()
-        finally:
-            self.doc.EndUndo()
-            c4d.EventAdd()
+    scene_class = JbScene
+    settings_class = JbSettings
 
-    def open_settings(self):
-        """Открыть диалог настроек."""
-        self._settings_dialog.Open(
-            dlgtype=c4d.DLG_TYPE_MODAL,
-            defaultw=250,
-            defaulth=120,
-        )
 
-    def show_popup_menu(self):
-        """Show the popup menu."""
-        bc = c4d.BaseContainer()
-        bc.InsData(IDC_POPUP_ACTION_IMPORT, f"Import&i{c4d.ID_MODELING_FLATTEN_TOOL}&")
-        bc.InsData(IDC_POPUP_ACTION_EXPORT, f"Export&i{c4d.ID_GLOBALMACHINELIST}&")
-        bc.InsData(IDC_POPUP_ACTION_SOLO, f"Solo&i{c4d.RESOURCEIMAGE_EYEACTIVE}&")
-        bc.InsData(0, "")
-        bc.InsData(IDC_POPUP_ACTION_SETTINGS, f"Settings&i{c4d.RESOURCEIMAGE_PIN}&")
+class JbAssetSolo(JbAssetSoloBase):
+    """Isolate the selected asset containers."""
 
-        res = c4d.gui.ShowPopupDialog(cd=None, bc=bc, x=c4d.MOUSEPOS, y=c4d.MOUSEPOS)
-
-        if res == IDC_POPUP_ACTION_IMPORT:
-            self.import_asset()
-        elif res == IDC_POPUP_ACTION_EXPORT:
-            self.export_asset()
-        elif res == IDC_POPUP_ACTION_SOLO:
-            self.solo()
-        elif res == IDC_POPUP_ACTION_SETTINGS:
-            self.open_settings()
+    scene: JbScene
+    scene_class = JbScene
+    settings_class = JbSettings
+    history_size = 10
 
 
 class JbCommands:

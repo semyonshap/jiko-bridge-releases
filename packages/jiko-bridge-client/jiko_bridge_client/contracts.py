@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from logging import Logger
 from typing import Any, Generator, Generic, List, Optional, TypeVar
 
@@ -79,10 +80,6 @@ class JbSceneABC(  # pylint: disable=too-many-public-methods
         """Return the currently selected objects or materials."""
 
     @abstractmethod
-    def copy_object_transform(self, obj: JbObjectT, target_obj: JbObjectT) -> None:
-        """Set the transform of the given object."""
-
-    @abstractmethod
     def remove_object(self, obj: JbObjectT) -> None:
         """Remove the given object from the scene."""
 
@@ -100,31 +97,36 @@ class JbSceneABC(  # pylint: disable=too-many-public-methods
         The default leaves the scene as it is.
         """
 
+    def apply_solo(self, containers: list[JbContainerT]) -> None:
+        """Show the given containers and hide every other one of the scene.
+
+        The default leaves the scene as it is.
+        """
+
     # ------------------------------------------------------------------
     # Container
     # ------------------------------------------------------------------
-
-    @abstractmethod
-    def get_container(self, asset: AssetModel) -> Optional[JbContainerT]:
-        """Get the container associated with the given asset, if it exists."""
 
     def container_key(self, container: JbContainerT) -> str:
         """Stable key of one container, unique inside the scene."""
         return str(id(container))
 
-    @abstractmethod
-    def get_or_create_container(
-        self, name: str, parent: Optional[JbContainerT] = None
-    ) -> JbContainerT:
-        """Get or create a container with the given name under the parent."""
+    @staticmethod
+    def container_name(asset: AssetModel) -> str:
+        """Name the scene gives to the container that holds the contents of an asset."""
+        return f"Asset_{asset.pack_name}_{asset.asset_name}"
 
     @abstractmethod
-    def get_or_create_asset_container(
+    def get_container(self, asset: AssetModel) -> Optional[JbContainerT]:
+        """Get the container of the given asset, once it already holds its model."""
+
+    @abstractmethod
+    def create_container(
         self,
         asset: AssetModel,
         file: Optional[AssetFile] = None,
-    ) -> tuple[JbContainerT, bool]:
-        """Get or create a container with asset data."""
+    ) -> JbContainerT:
+        """Create the container of the given asset and store its asset data."""
 
     @abstractmethod
     def set_asset_data(
@@ -169,8 +171,14 @@ class JbSceneABC(  # pylint: disable=too-many-public-methods
     # ------------------------------------------------------------------
 
     @abstractmethod
-    def create_instance(self, container: JbContainerT, name: str) -> JbObjectT:
-        """Create an instance of the given object."""
+    def create_instance(
+        self,
+        container: JbContainerT,
+        name: str,
+        parent: Optional[JbContainerT] = None,
+        source: Optional[JbObjectT] = None,
+    ) -> Optional[JbObjectT]:
+        """Create an instance of an asset container, placed under the given parent."""
 
     @abstractmethod
     def get_names_from_placeholder(self, obj: JbObjectT) -> List[str]:
@@ -213,9 +221,11 @@ class JbSceneABC(  # pylint: disable=too-many-public-methods
     # Temp Scene
     # ------------------------------------------------------------------
 
+    @contextmanager
     @abstractmethod
     def temp_source(self) -> Generator[Any, None, None]:
         """Context manager for the isolated scene the import works in."""
+        yield
 
     # ------------------------------------------------------------------
     # Scene (high-level)

@@ -65,11 +65,14 @@ class JbSceneObjects(JbSceneBase):
     def get_children(self, obj) -> list[JbObject]:
         return obj.GetChildren() or []
 
-    def copy_object_transform(self, obj, target_obj) -> None:
-        obj.SetMg(target_obj.GetMg())
-
     def remove_object(self, obj) -> None:
         obj.Remove()
+
+    def move_objects_to_container(self, objects, container) -> None:
+        """Unified API: re-parents objects under asset null."""
+        for obj in objects:
+            obj.Remove()
+            obj.InsertUnder(container)
 
     def get_depth(self, obj) -> int:
         depth = 0

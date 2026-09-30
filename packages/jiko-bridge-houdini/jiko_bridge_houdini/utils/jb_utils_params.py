@@ -28,9 +28,7 @@ def parm_text(node: hou.OpNode, template: str, *numbers: int) -> str:
     return parm.evalAsString() if parm is not None else ""
 
 
-def set_parm_text(
-    node: hou.OpNode, template: str, value: Optional[str], *numbers: int
-) -> None:
+def set_parm_text(node: hou.OpNode, template: str, value: Optional[str], *numbers: int) -> None:
     """Write a string into one multiparm parameter, skipping an absent one."""
     parm = parm_of(node, template, *numbers)
     text = "" if value is None else str(value)
@@ -43,13 +41,6 @@ def set_multiparm_count(node: hou.OpNode, template: str, count: int, *numbers: i
     parm = parm_of(node, template, *numbers)
     if parm is not None and parm.evalAsInt() != count:
         parm.set(count)
-
-
-def set_parm_flag(node: hou.OpNode, template: str, value: bool, *numbers: int) -> None:
-    """Write a toggle into one multiparm parameter, skipping an absent one."""
-    parm = parm_of(node, template, *numbers)
-    if parm is not None and bool(parm.evalAsInt()) != value:
-        parm.set(int(value))
 
 
 def node_assets(node: hou.OpNode) -> list[AssetModel]:
@@ -79,17 +70,12 @@ def asset_cache_file(node: hou.OpNode, asset: AssetModel) -> Optional[str]:
     return absolute_path(parm_text(node, "cache_file#", number)) if number is not None else None
 
 
-def store_asset(node: hou.OpNode, asset: AssetModel, enable: bool = False) -> None:
-    """Write the asset the Bridge returned into its entry, creating the entry.
-
-    The enable flag seeds only a newly created entry, so a switch the user has
-    set by hand survives the next import.
-    """
+def store_asset(node: hou.OpNode, asset: AssetModel) -> None:
+    """Write the asset the Bridge returned into its entry, creating the entry."""
     names = (asset.vault_name, asset.pack_name, asset.asset_name)
     number = _find_entry(node, names)
     if number is None:
         number = _add_entry(node)
-        set_parm_flag(node, "enable#", enable, number)
     for template, value in zip(("vault_name#", "pack_name#", "asset_name#"), names):
         set_parm_text(node, template, value, number)
     set_parm_text(
